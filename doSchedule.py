@@ -257,8 +257,14 @@ def _split_two_parts(name: str, max_len: int = 12) -> tuple[str, str]:
     return name[:idx], name[idx + 1:]
 
 
-def _format_table(rows, header_top=None, header_bottom=None, center_mask=None):
-    """Return string representing a simple ascii table with optional two-line header."""
+def _format_table(rows, header_top=None, header_bottom=None, center_mask=None, join_rows=False):
+    """Return string representing a simple ascii table with optional two-line header.
+
+    When ``join_rows`` is True the ``rows`` argument is interpreted as pairs of
+    rows that represent logically single table rows split in two lines. In that
+    case horizontal separators are printed only after each pair, producing a
+    visual effect of cells spanning two lines.
+    """
     col_count = max(len(r) for r in rows)
     if header_top:
         col_count = max(col_count, len(header_top))
@@ -305,8 +311,10 @@ def _format_table(rows, header_top=None, header_bottom=None, center_mask=None):
         if header_bottom:
             lines.append(fmt_row(header_bottom))
         lines.append(sep)
-    for r in rows:
+    for idx, r in enumerate(rows):
         lines.append(fmt_row(r))
+        if join_rows and idx % 2 == 0 and idx + 1 < len(rows):
+            continue
         lines.append(sep)
     return "\n".join(lines)
 
@@ -334,18 +342,15 @@ def _teacher_table(teachers, teacher_names, subject_names):
 
     center_mask = [False] + [True] * max_subj
 
-    # group pairs of rows into combined structure
-    combined_rows = []
-    for i in range(0, len(rows), 2):
-        combined_rows.append(rows[i])
-        combined_rows.append(rows[i + 1])
-
-    return _format_table(combined_rows, header_top, header_bottom, center_mask)
+    return _format_table(rows, header_top, header_bottom, center_mask, join_rows=True)
 
 
-def _student_table(students, subjects_order, student_names, subject_names):
-    header_top = ["Student"] + [f"Subject #{i+1}" for i in range(len(subjects_order))] + ["Total"]
-    header_bottom = ["Name"] + ["Lessons" for _ in subjects_order] + ["Hours"]
+def _student_table(students, student_names, subject_names):
+    """Return formatted table of student schedules."""
+    max_subj = max((len(info) for info in students.values()), default=0)
+
+    header_top = ["Student"] + [f"Subject #{i+1}" for i in range(max_subj)] + ["Total"]
+    header_bottom = ["Name"] + ["Lessons" for _ in range(max_subj)] + ["Hours"]
 
     rows = []
     for sid in sorted(students.keys(), key=lambda x: student_names.get(x, x)):
@@ -354,18 +359,21 @@ def _student_table(students, subjects_order, student_names, subject_names):
         row_bottom = [name2]
         subj_map = students[sid]
         total_hours = 0
-        for sub in subjects_order:
+        for sub in sorted(subj_map.keys(), key=lambda x: subject_names.get(x, x)):
             row_top.append(subject_names.get(sub, sub))
-            hours = subj_map.get(sub, 0)
-            row_bottom.append(str(hours) if hours else "")
+            hours = subj_map[sub]
+            row_bottom.append(str(hours))
             total_hours += hours
+        # pad to max subjects
+        row_top += ["" for _ in range(max_subj - len(subj_map))]
+        row_bottom += ["" for _ in range(max_subj - len(subj_map))]
         row_top.append("")
         row_bottom.append(str(total_hours))
         rows.append(row_top)
         rows.append(row_bottom)
 
-    center_mask = [False] + [True] * len(subjects_order) + [True]
-    return _format_table(rows, header_top, header_bottom, center_mask)
+    center_mask = [False] + [True] * max_subj + [True]
+    return _format_table(rows, header_top, header_bottom, center_mask, join_rows=True)
 
 
 def _subject_table(subjects, subject_names):
@@ -395,8 +403,7 @@ def report_analysis(schedule, data):
     print(_teacher_table(teachers, teacher_names, subject_names))
 
     print("\n=== Students ===")
-    all_subjects = sorted(subject_names.keys(), key=lambda x: subject_names[x])
-    print(_student_table(students, all_subjects, student_names, subject_names))
+    print(_student_table(students, student_names, subject_names))
 
     print("\n=== Subjects ===")
     print(_subject_table(subjects, subject_names))

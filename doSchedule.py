@@ -229,12 +229,131 @@ def analyse_students(schedule):
 
 
 def analyse_subjects(schedule):
-    subj_students = defaultdict(set)
+    subjects = defaultdict(lambda: {"students": set(), "teachers": set(), "class_sizes": []})
     for block in schedule:
         for cls in block:
             subj = cls["subject"]
-            subj_students[subj].update(cls["students"])
-    return subj_students
+            subjects[subj]["students"].update(cls["students"])
+            subjects[subj]["teachers"].add(cls["teacher"])
+            subjects[subj]["class_sizes"].append(len(cls["students"]))
+    return subjects
+
+
+def _split_two_parts(name: str, max_len: int = 12) -> tuple[str, str]:
+    """Split a long header name into two roughly equal parts."""
+    if len(name) <= max_len:
+        return name, ""
+    half = len(name) // 2
+    left = name.rfind(" ", 0, half)
+    right = name.find(" ", half)
+    if left == -1 and right == -1:
+        return name[:half], name[half:]
+    if left == -1:
+        idx = right
+    elif right == -1:
+        idx = left
+    else:
+        idx = left if half - left <= right - half else right
+    return name[:idx], name[idx + 1:]
+
+
+def _format_table(rows, header_top=None, header_bottom=None):
+    """Return string representing a simple ascii table with optional two-line header."""
+    col_count = max(len(r) for r in rows)
+    if header_top:
+        col_count = max(col_count, len(header_top))
+    if header_bottom:
+        col_count = max(col_count, len(header_bottom))
+
+    # normalize rows
+    rows = [list(r) + [""] * (col_count - len(r)) for r in rows]
+    if header_top:
+        header_top = list(header_top) + [""] * (col_count - len(header_top))
+    if header_bottom:
+        header_bottom = list(header_bottom) + [""] * (col_count - len(header_bottom))
+
+    # compute widths
+    widths = [0] * col_count
+    sources = rows[:]
+    if header_top:
+        sources.append(header_top)
+    if header_bottom:
+        sources.append(header_bottom)
+    for r in sources:
+        for i, cell in enumerate(r):
+            widths[i] = max(widths[i], len(str(cell)))
+
+    def fmt_row(cells):
+        return "| " + " | ".join(str(cells[i]).ljust(widths[i]) for i in range(col_count)) + " |"
+
+    sep = "+-" + "-+-".join("-" * w for w in widths) + "-+"
+    lines = [sep]
+    if header_top:
+        lines.append(fmt_row(header_top))
+        if header_bottom:
+            lines.append(fmt_row(header_bottom))
+        lines.append(sep)
+    for r in rows:
+        lines.append(fmt_row(r))
+        lines.append(sep)
+    return "\n".join(lines)
+
+
+def _teacher_table(teachers, teacher_names, subject_names):
+    rows = []
+    for tid, info in sorted(teachers.items(), key=lambda x: x[1]["blocks"], reverse=True):
+        row_top = [teacher_names.get(tid, tid)]
+        row_bottom = [""]
+        subj_stats = sorted(info["subjects"].items(), key=lambda x: len(x[1]), reverse=True)
+        for sid, counts in subj_stats:
+            row_top.append(subject_names.get(sid, sid))
+            avg_s = mean(counts) if counts else 0
+            row_bottom.append(f"{len(counts)} | {avg_s:.1f}")
+        rows.append(row_top)
+        rows.append(row_bottom)
+    header_top = ["TEACHER_NAME"] + ["SUBJECT_NAME"] * (max(len(r) for r in rows) - 1)
+    header_bottom = [""] + ["CLASSES | AVG"] * (len(header_top) - 1)
+    # group pairs of rows into combined structure
+    combined_rows = []
+    for i in range(0, len(rows), 2):
+        r1 = rows[i]
+        r2 = rows[i + 1]
+        combined_rows.append(r1)
+        combined_rows.append(r2)
+    return _format_table(combined_rows, header_top, header_bottom)
+
+
+def _student_table(students, subjects_order, student_names, subject_names):
+    header_top = ["STUDENT"]
+    header_bottom = ["NAME"]
+    for sid in subjects_order:
+        h1, h2 = _split_two_parts(subject_names.get(sid, sid))
+        header_top.append(h1)
+        header_bottom.append(h2)
+
+    rows = []
+    for sid in sorted(students.keys(), key=lambda x: student_names.get(x, x)):
+        row = [student_names.get(sid, sid)]
+        subj_map = students[sid]
+        for sub in subjects_order:
+            val = subj_map.get(sub, "")
+            row.append(val if val else "")
+        rows.append(row)
+
+    return _format_table(rows, header_top, header_bottom)
+
+
+def _subject_table(subjects, subject_names):
+    rows = []
+    for sid, info in sorted(subjects.items(), key=lambda x: subject_names.get(x[0], x[0])):
+        name = subject_names.get(sid, sid)
+        total_students = len(info["students"])
+        teachers_cnt = len(info["teachers"])
+        avg_size = mean(info["class_sizes"]) if info["class_sizes"] else 0
+        rows.append([name, str(total_students), str(teachers_cnt), f"{avg_size:.1f}"])
+
+    header = ["SUBJECT", "STUDENTS", "TEACHERS", "AVG_CLASS"]
+    return _format_table(rows, header)
 
 
 def report_analysis(schedule, data):
@@ -246,31 +365,15 @@ def report_analysis(schedule, data):
     student_names = {sid: info.get("name", sid) for sid, info in data.get("students", {}).items()}
     subject_names = {sid: info.get("name", sid) for sid, info in data.get("subjects", {}).items()}
 
-    lines = []
-    lines.append("=== Teachers ===")
-    for tid, info in sorted(teachers.items(), key=lambda x: x[1]["blocks"], reverse=True):
-        avg = mean(info["students"]) if info["students"] else 0
-        tname = teacher_names.get(tid, tid)
-        parts = [f"{tname}: {info['blocks']} blocks, {avg:.1f} students/class\n"]
-        subj_stats = sorted(info["subjects"].items(), key=lambda x: len(x[1]), reverse=True)
-        for subj, counts in subj_stats:
-            avg_s = mean(counts) if counts else 0
-            sname = subject_names.get(subj, subj)
-            parts.append(f"{sname}: {len(counts)} {avg_s:.1f};")
-        lines.append(" ".join(parts))
+    print("=== Teachers ===")
+    print(_teacher_table(teachers, teacher_names, subject_names))
 
-    lines.append("\n=== Students ===")
-    for sid, subj_map in sorted(students.items()):
-        sname = student_names.get(sid, sid)
-        parts = [sname] + [f"{subject_names.get(subj, subj)}: {hrs}" for subj, hrs in sorted(subj_map.items())]
-        lines.append("; ".join(parts))
+    print("\n=== Students ===")
+    all_subjects = sorted(subject_names.keys(), key=lambda x: subject_names[x])
+    print(_student_table(students, all_subjects, student_names, subject_names))
 
-    lines.append("\n=== Subjects ===")
-    for subj, stus in sorted(subjects.items(), key=lambda x: len(x[1]), reverse=True):
-        sname = subject_names.get(subj, subj)
-        lines.append(f"{sname}: {len(stus)} students")
-
-    print("\n".join(lines))
+    print("\n=== Subjects ===")
+    print(_subject_table(subjects, subject_names))
 
 # ---------------------------------------------------------------------------
 # Main combined entry

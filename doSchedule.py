@@ -408,6 +408,28 @@ def report_analysis(schedule, data):
     print("\n=== Subjects ===")
     print(_subject_table(subjects, subject_names))
 
+
+def render_schedule(schedule, data):
+    """Pretty-print generated blocks sorted by size."""
+    teacher_names = {tid: info.get("name", tid) for tid, info in data.get("teachers", {}).items()}
+    student_names = {sid: info.get("name", sid) for sid, info in data.get("students", {}).items()}
+    subject_names = {sid: info.get("name", sid) for sid, info in data.get("subjects", {}).items()}
+
+    sorted_blocks = sorted(schedule, key=lambda b: len(b), reverse=True)
+    for idx, block in enumerate(sorted_blocks, 1):
+        block_students = set()
+        for cls in block:
+            block_students.update(cls["students"])
+        classes = sorted(block, key=lambda c: len(c["students"]), reverse=True)
+        print(f"Block #{idx} has {len(classes)} subjects for {len(block_students)} students:")
+        for cls in classes:
+            subj_name = subject_names.get(cls["subject"], cls["subject"])
+            teach_name = teacher_names.get(cls["teacher"], cls["teacher"])
+            students_sorted = sorted(cls["students"], key=lambda s: student_names.get(s, s))
+            student_list = ", ".join(student_names.get(s, s) for s in students_sorted)
+            print(f"{subj_name} by {teach_name} for {len(students_sorted)} students: {student_list}")
+        print()
+
 # ---------------------------------------------------------------------------
 # Main combined entry
 # ---------------------------------------------------------------------------
@@ -417,7 +439,7 @@ def main():
     auto_yes = "-y" in sys.argv[1:]
 
     cfg_path = args[0] if len(args) >= 1 else "config.json"
-    out_path = args[1] if len(args) >= 2 else "blocks.js"
+    out_path = args[1] if len(args) >= 2 else "blocks.json"
 
     if not os.path.exists(cfg_path):
         if auto_yes:
@@ -441,6 +463,8 @@ def main():
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(schedule, f, ensure_ascii=False, indent=2)
     print(f"Schedule written to {out_path}")
+
+    render_schedule(schedule, data)
 
     if auto_yes:
         show_analysis = True

@@ -21,48 +21,63 @@ def csv_to_config(input_file):
         "students": {}
     }
     
-    # Для отслеживания уникальных идентификаторов
+    # Track unique identifiers
     teacher_ids = set()
     student_ids = set()
     
+    required = ['Year group', 'Subject', 'Weekly hours', 'Teacher', 'Students']
     with open(input_file, 'r', encoding='utf-8') as f:
         reader = csv.DictReader(f, delimiter='\t')
-        for row in reader:
+        for line_num, row in enumerate(reader, start=2):
+            if not row or all((v is None or v == '') for v in row.values()):
+                print(f"Skipping empty line {line_num}", file=sys.stderr)
+                continue
+
+            if any(field not in row or row[field] in (None, '') for field in required):
+                print(f"Skipping invalid line {line_num}: missing data", file=sys.stderr)
+                continue
+
             year_group = row['Year group']
             subject_name = f"{year_group}_{row['Subject']}"
-            hours = int(row['Weekly hours'])
+
+            try:
+                hours = int(row['Weekly hours'])
+            except (TypeError, ValueError):
+                print(f"Skipping invalid line {line_num}: bad hours '{row['Weekly hours']}'", file=sys.stderr)
+                continue
+
             teacher_name = row['Teacher']
-            student_names = [name.strip() for name in row['Students'].split(',')]
+            student_names = [name.strip() for name in row['Students'].split(',') if name.strip()]
             
-            # Обработка учителя
+            # Handle teacher
             teacher_id = normalize_id(teacher_name)
             if teacher_id not in teacher_ids:
                 config["teachers"][teacher_id] = {"name": teacher_name}
                 teacher_ids.add(teacher_id)
             
-            # Создаем уникальный ID для предмета
+            # Create a unique subject ID
             subject_id = normalize_id(subject_name)
             if subject_id in config["subjects"]:
-                # Если предмет уже существует, добавляем суффикс
+                # If the subject already exists, append a suffix
                 suffix = 2
                 while f"{subject_id}_{suffix}" in config["subjects"]:
                     suffix += 1
                 subject_id = f"{subject_id}_{suffix}"
             
-            # Добавляем предмет
+            # Add the subject
             config["subjects"][subject_id] = {
                 "hours": hours,
                 "teachers": [teacher_id]
             }
             
-            # Обработка студентов
+            # Handle students
             for student_name in student_names:
                 student_id = normalize_id(student_name)
                 if student_id not in student_ids:
                     config["students"][student_id] = {"subjects": []}
                     student_ids.add(student_id)
                 
-                # Добавляем предмет в список студента
+                # Add the subject to the student's list
                 if subject_id not in config["students"][student_id]["subjects"]:
                     config["students"][student_id]["subjects"].append(subject_id)
     
@@ -72,7 +87,7 @@ def main():
     input_file = 'data.csv'
     output_file = 'config.json'
     
-    # Обработка аргументов командной строки
+    # Handle command line arguments
     if len(sys.argv) > 1:
         input_file = sys.argv[1]
     if len(sys.argv) > 2:
@@ -84,20 +99,20 @@ def main():
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(config, f, ensure_ascii=False, indent=2)
         
-        print(f"Успешно сконвертировано: {input_file} -> {output_file}")
-        print(f"Учителей: {len(config['teachers'])}")
-        print(f"Предметов: {len(config['subjects'])}")
-        print(f"Студентов: {len(config['students'])}")
-        print(f"Макс. блоков: {config['limits']['MAX_BLOCKS']}")
+        print(f"Successfully converted: {input_file} -> {output_file}")
+        print(f"Teachers: {len(config['teachers'])}")
+        print(f"Subjects: {len(config['subjects'])}")
+        print(f"Students: {len(config['students'])}")
+        print(f"Max blocks: {config['limits']['MAX_BLOCKS']}")
     
     except FileNotFoundError:
-        print(f"Ошибка: Файл не найден - {input_file}", file=sys.stderr)
+        print(f"Error: File not found - {input_file}", file=sys.stderr)
         sys.exit(1)
     except KeyError as e:
-        print(f"Ошибка: Отсутствует обязательная колонка - {e}", file=sys.stderr)
+        print(f"Error: Missing required column - {e}", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
-        print(f"Ошибка: {str(e)}", file=sys.stderr)
+        print(f"Error: {str(e)}", file=sys.stderr)
         sys.exit(1)
 
 if __name__ == "__main__":

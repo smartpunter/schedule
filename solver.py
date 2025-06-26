@@ -163,8 +163,11 @@ def build_model(data, limits):
     # 6) MAX_BLOCKS
     model.Add(sum(block_used[b] for b in range(B)) <= limits["MAX_BLOCKS"])
 
-    # --- Objective: minimise #used blocks -----------------------------------
-    model.Minimize(sum(block_used[b] for b in range(B)))
+    # --- Objective: minimise blocks first, then number of classes -------------
+    num_blocks = sum(block_used[b] for b in range(B))
+    num_classes = sum(class_used[(b, s, t)] for b in range(B) for s, t in pairs)
+    big_M = B * limits["MAX_CLASSES_PER_BLOCK"] + 1
+    model.Minimize(num_blocks * big_M + num_classes)
 
     return model, y, class_used, block_used, B, pairs, students
 

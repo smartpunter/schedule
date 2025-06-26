@@ -330,8 +330,12 @@ def _format_table(rows, header_top=None, header_bottom=None, center_mask=None, j
 def _teacher_table(teachers, teacher_names, subject_names):
     rows = []
     max_subj = max((len(info["subjects"]) for info in teachers.values()), default=0)
-    for tid, info in sorted(teachers.items(), key=lambda x: x[1]["blocks"], reverse=True):
+    def teacher_hours(info):
+        return sum(len(c) for c in info["subjects"].values())
+
+    for tid, info in sorted(teachers.items(), key=lambda x: teacher_hours(x[1]), reverse=True):
         name1, name2 = _split_two_parts(teacher_names.get(tid, tid))
+        total_hours = teacher_hours(info)
         row_top = [name1]
         row_bottom = [name2]
         subj_stats = sorted(info["subjects"].items(), key=lambda x: len(x[1]), reverse=True)
@@ -342,46 +346,34 @@ def _teacher_table(teachers, teacher_names, subject_names):
         # pad to max subjects
         row_top += [""] * (max_subj - len(subj_stats))
         row_bottom += [""] * (max_subj - len(subj_stats))
-        rows.append(row_top)
-        rows.append(row_bottom)
-
-    header_top = ["Teacher"] + [f"Subject #{i+1}" for i in range(max_subj)]
-    header_bottom = [""] + ["Classes | Avg" for _ in range(max_subj)]
-
-    center_mask = [False] + [True] * max_subj
-
-    return _format_table(rows, header_top, header_bottom, center_mask, join_rows=True)
-
-
-def _student_table(students, student_names, subject_names):
-    """Return formatted table of student schedules."""
-    max_subj = max((len(info) for info in students.values()), default=0)
-
-    header_top = ["Student"] + [f"Subject #{i+1}" for i in range(max_subj)] + ["Total"]
-    header_bottom = ["Name"] + ["Lessons" for _ in range(max_subj)] + ["Hours"]
-
-    rows = []
-    for sid in sorted(students.keys(), key=lambda x: student_names.get(x, x)):
-        name1, name2 = _split_two_parts(student_names.get(sid, sid))
-        row_top = [name1]
-        row_bottom = [name2]
-        subj_map = students[sid]
-        total_hours = 0
-        for sub in sorted(subj_map.keys(), key=lambda x: subject_names.get(x, x)):
-            row_top.append(subject_names.get(sub, sub))
-            hours = subj_map[sub]
-            row_bottom.append(str(hours))
-            total_hours += hours
-        # pad to max subjects
-        row_top += ["" for _ in range(max_subj - len(subj_map))]
-        row_bottom += ["" for _ in range(max_subj - len(subj_map))]
         row_top.append("")
         row_bottom.append(str(total_hours))
         rows.append(row_top)
         rows.append(row_bottom)
 
+    header_top = ["Teacher"] + [f"Subject #{i+1}" for i in range(max_subj)] + ["Total"]
+    header_bottom = [""] + ["Classes | Avg" for _ in range(max_subj)] + ["Hours"]
+
     center_mask = [False] + [True] * max_subj + [True]
+
     return _format_table(rows, header_top, header_bottom, center_mask, join_rows=True)
+
+
+def _student_list(students, student_names, subject_names):
+    """Return formatted list of student schedules."""
+    lines = []
+    for sid, subj_map in sorted(
+        students.items(), key=lambda x: sum(x[1].values()), reverse=True
+    ):
+        name = student_names.get(sid, sid)
+        subj_count = len(subj_map)
+        total_hours = sum(subj_map.values())
+        parts = []
+        for sub_id, hours in sorted(subj_map.items(), key=lambda x: subject_names.get(x[0], x[0])):
+            parts.append(f"{hours} hours {subject_names.get(sub_id, sub_id)}")
+        line = f"{name} has {subj_count} subjects for {total_hours} hours: " + ", ".join(parts)
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def _subject_table(subjects, subject_names):
@@ -411,7 +403,7 @@ def report_analysis(schedule, data):
     print(_teacher_table(teachers, teacher_names, subject_names))
 
     print("\n=== Students ===")
-    print(_student_table(students, student_names, subject_names))
+    print(_student_list(students, student_names, subject_names))
 
     print("\n=== Subjects ===")
     print(_subject_table(subjects, subject_names))
@@ -464,13 +456,25 @@ def main():
         print(f"Mock data written to {cfg_path}")
 
     data, limits = load_config(cfg_path)
-    model, y, class_used, block_used, B, pairs, students = build_model(data, limits)
-    solver = solve(model)
-    schedule = extract(solver, y, B, pairs, students)
 
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(schedule, f, ensure_ascii=False, indent=2)
-    print(f"Schedule written to {out_path}")
+    skip_solve = False
+    if os.path.exists(out_path):
+        if auto_yes:
+            skip_solve = True
+        else:
+            ans = input(f"Blocks file '{out_path}' found. Skip solving and use it? [y/N] ")
+            skip_solve = ans.strip().lower().startswith("y")
+
+    if skip_solve:
+        with open(out_path, "r", encoding="utf-8") as f:
+            schedule = json.load(f)
+    else:
+        model, y, class_used, block_used, B, pairs, students = build_model(data, limits)
+        solver = solve(model)
+        schedule = extract(solver, y, B, pairs, students)
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(schedule, f, ensure_ascii=False, indent=2)
+        print(f"Schedule written to {out_path}")
 
     render_schedule(schedule, data)
 

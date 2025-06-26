@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""
-schedule_multi.py ― оптимальный генератор блоков
-------------------------------------------------
-* Поддерживает **несколько учителей на предмет** (поле `teachers: [...]`).
-* Разрешает **несколько параллельных уроков одного предмета в одном блоке**
-  (каждый – с своим учителем).
-* Выводит **массив блоков**, каждый блок — массив объектов вида  
-  `{ "subject": <subject_id>, "teacher": <teacher_id>, "students": [...] }`.
+"""Schedule generator using Google OR-Tools.
 
-Требования:
+The script reads a configuration JSON describing available teachers,
+subjects and students. It builds a constraint model to allocate classes
+to time blocks and writes the resulting schedule to ``schedule.json``.
+
+Usage::
+
+    python solver.py <config.json>
+
+Dependencies::
+
     pip install ortools
-Запуск:
-    python schedule_multi.py config.json > schedule.json
 """
 
 import json, sys, math
@@ -53,14 +53,14 @@ def build_model(data, limits):
     students = list(data["students"])
     teachers_all = list(data["teachers"])
 
-    # для каждого предмета список учителей
+    # map each subject to its available teachers
     teach_map = {}
     for s in subjects:
         subj = data["subjects"][s]
         if "teachers" in subj:
             teach_map[s] = subj["teachers"]
         elif "teacher" in subj:
-            teach_map[s] = [subj["teacher"]]  # Преобразуем строку в список
+            teach_map[s] = [subj["teacher"]]  # normalize single teacher field
         else:
             raise KeyError(f"Subject '{s}' has no 'teacher' or 'teachers' field")
 
@@ -68,8 +68,8 @@ def build_model(data, limits):
 
     B = upper_bound_blocks(data, limits)
 
-    # --- Decision vars ------------------------------------------------------
-    # y[b,s,t,u] = 1 если ученик u на уроке (s,t) в блоке b
+    # --- Decision variables -------------------------------------------------
+    # y[b,s,t,u] = 1 if student u attends subject s with teacher t in block b
     y = {}
     for b in range(B):
         for s, t in pairs:
@@ -84,11 +84,11 @@ def build_model(data, limits):
         for s, t in pairs
     }
 
-    # block_used[b]
+    # block_used[b] indicates whether block b has at least one class
     block_used = {b: model.NewBoolVar(f"block_{b}") for b in range(B)}
 
     # --- Constraints --------------------------------------------------------
-    # 1) Ученик – не более 1 урока в блоке
+    # 1) A student can attend at most one class per block
     for b in range(B):
         for u in students:
             model.Add(
@@ -99,7 +99,7 @@ def build_model(data, limits):
                 <= 1
             )
 
-    # 2) Часы по предмету = hours
+    # 2) Required hours per subject
     for u in students:
         subj_list = data["students"][u]["subjects"]
         for s in subj_list:
@@ -114,7 +114,7 @@ def build_model(data, limits):
                 == need
             )
 
-    # 3) Вместимость классов и связь с class_used
+    # 3) Class capacity and link to class_used
     max_sz = limits["MAX_STUDENTS_PER_CLASS"]
     min_sz = limits["MIN_STUDENTS_PER_CLASS"]
 
@@ -125,17 +125,17 @@ def build_model(data, limits):
                 for u in students
                 if (b, s, t, u) in y
             ]
-            if enrol:  # предмет может быть не выбран никем
+            if enrol:  # class may be empty if no one enrolled
                 total = sum(enrol)
                 model.Add(total >= min_sz).OnlyEnforceIf(class_used[(b, s, t)])
                 model.Add(total <= max_sz * class_used[(b, s, t)])
-                # если class_used=0 -> total=0
+                # if class_used=0 -> total=0
                 model.Add(total >= 1).OnlyEnforceIf(class_used[(b, s, t)])
             else:
-                # никто не записан – класс использовать бессмысленно
+                # no students -> do not use this class
                 model.Add(class_used[(b, s, t)] == 0)
 
-    # 4) Учитель ≤1 урока за блок
+    # 4) A teacher can teach at most one class per block
     for b in range(B):
         for t in teachers_all:
             model.Add(
@@ -147,13 +147,13 @@ def build_model(data, limits):
                 <= 1
             )
 
-    # 5) Аудитории
+    # 5) Room capacity per block
     for b in range(B):
         model.Add(
             sum(class_used[(b, s, t)] for s, t in pairs)
             <= limits["MAX_CLASSES_PER_BLOCK"]
         )
-        # связь block_used
+        # link block_used with classes present
         model.AddMaxEquality(
             block_used[b],
             [class_used[(b, s, t)] for s, t in pairs]
@@ -174,8 +174,8 @@ def build_model(data, limits):
 # ---------------------------------------------------------------------------
 def solve(model):
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 0           # без лимита
-    solver.parameters.num_search_workers = 8            # autodetect (≥2)
+    solver.parameters.max_time_in_seconds = 300  # five minute limit
+    solver.parameters.num_search_workers = 10    # use up to ten CPUs
     solver.parameters.log_search_progress = True
     status = solver.Solve(model)
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
@@ -208,14 +208,16 @@ def extract(solver, y, B, pairs, students):
 # ---------------------------------------------------------------------------
 def main():
     if len(sys.argv) != 2:
-        print("usage: python schedule_multi.py <config.json>", file=sys.stderr)
+        print("usage: python solver.py <config.json>", file=sys.stderr)
         sys.exit(1)
 
     data, limits = load_config(sys.argv[1])
     model, y, class_used, block_used, B, pairs, students = build_model(data, limits)
     solver = solve(model)
     result = extract(solver, y, B, pairs, students)
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    with open("schedule.json", "w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=False, indent=2)
+    print("Schedule written to schedule.json")
 
 
 if __name__ == "__main__":

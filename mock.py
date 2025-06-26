@@ -17,12 +17,12 @@ def generate_mock_data(extra_teacher_prob=0.1):
         "students": {}
     }
     
-    # Создаем учителей (10 для старших классов)
+    # Create teachers for upper school (10 total)
     senior_teachers = [f"teacher_s{i}" for i in range(1, 11)]
     for teacher_id in senior_teachers:
         data["teachers"][teacher_id] = {"name": fake.name()}
     
-    # Создаем предметы для DP1 и DP2
+    # Create subjects for DP1 and DP2
     years = ["DP1", "DP2"]
     subject_types = {
         "simple": {"hours": 3, "count": 6},
@@ -30,17 +30,17 @@ def generate_mock_data(extra_teacher_prob=0.1):
         "extra": {"hours": 3, "count": 1}
     }
     
-    # Генерируем предметы
+    # Generate subjects
     for year in years:
         for subj_type, config in subject_types.items():
             for i in range(1, config["count"] + 1):
                 subject_id = f"{subj_type}_{year}_{i}"
                 
-                # Выбираем основного учителя
+                # Pick the main teacher
                 main_teacher = random.choice(senior_teachers)
                 teachers_list = [main_teacher]
                 
-                # С вероятностью 10% добавляем второго учителя
+                # With 10% probability add a second teacher
                 if random.random() < extra_teacher_prob and subj_type != "extra":
                     other_teachers = [t for t in senior_teachers if t != main_teacher]
                     if other_teachers:
@@ -52,18 +52,18 @@ def generate_mock_data(extra_teacher_prob=0.1):
                     "teachers": teachers_list
                 }
     
-    # Создаем учеников
+    # Create students
     student_count = 0
     for year in years:
-        for i in range(1, 16):  # 15 учеников в каждом классе
+        for i in range(1, 16):  # 15 students per year level
             student_id = f"student_{year}_{i}"
             student_count += 1
             
-            # Выбираем предметы
+            # Choose subjects
             simple_subjects = [f"simple_{year}_{i}" for i in range(1, 7)]
             advanced_subjects = [f"advanced_{year}_{i}" for i in range(1, 7)]
             
-            # Случайный выбор 3 простых и 3 сложных предметов
+            # Randomly select 3 simple and 3 advanced subjects
             selected_simple = random.sample(simple_subjects, 3)
             selected_advanced = random.sample(advanced_subjects, 3)
             extra_subject = [f"extra_{year}_1"]
@@ -78,10 +78,10 @@ def generate_mock_data(extra_teacher_prob=0.1):
     return data
 
 if __name__ == "__main__":
-    # Генерируем данные с вероятностью дополнительного учителя 10%
+    # Generate data with 10% chance of an extra teacher
     mock_data = generate_mock_data(extra_teacher_prob=0.1)
     
     with open("mock_data.json", "w") as f:
         json.dump(mock_data, f, indent=2, ensure_ascii=False)
     
-    print("Mock данные успешно сохранены в mock_data.json")
+    print("Mock data written to mock_data.json")

@@ -257,7 +257,7 @@ def _split_two_parts(name: str, max_len: int = 12) -> tuple[str, str]:
     return name[:idx], name[idx + 1:]
 
 
-def _format_table(rows, header_top=None, header_bottom=None):
+def _format_table(rows, header_top=None, header_bottom=None, center_mask=None):
     """Return string representing a simple ascii table with optional two-line header."""
     col_count = max(len(r) for r in rows)
     if header_top:
@@ -272,6 +272,11 @@ def _format_table(rows, header_top=None, header_bottom=None):
     if header_bottom:
         header_bottom = list(header_bottom) + [""] * (col_count - len(header_bottom))
 
+    if center_mask is None:
+        center_mask = [False] * col_count
+    else:
+        center_mask = list(center_mask) + [False] * (col_count - len(center_mask))
+
     # compute widths
     widths = [0] * col_count
     sources = rows[:]
@@ -284,7 +289,14 @@ def _format_table(rows, header_top=None, header_bottom=None):
             widths[i] = max(widths[i], len(str(cell)))
 
     def fmt_row(cells):
-        return "| " + " | ".join(str(cells[i]).ljust(widths[i]) for i in range(col_count)) + " |"
+        parts = []
+        for i in range(col_count):
+            text = str(cells[i])
+            if center_mask[i]:
+                parts.append(text.center(widths[i]))
+            else:
+                parts.append(text.ljust(widths[i]))
+        return "| " + " | ".join(parts) + " |"
 
     sep = "+-" + "-+-".join("-" * w for w in widths) + "-+"
     lines = [sep]
@@ -301,46 +313,59 @@ def _format_table(rows, header_top=None, header_bottom=None):
 
 def _teacher_table(teachers, teacher_names, subject_names):
     rows = []
+    max_subj = max((len(info["subjects"]) for info in teachers.values()), default=0)
     for tid, info in sorted(teachers.items(), key=lambda x: x[1]["blocks"], reverse=True):
-        row_top = [teacher_names.get(tid, tid)]
-        row_bottom = [""]
+        name1, name2 = _split_two_parts(teacher_names.get(tid, tid))
+        row_top = [name1]
+        row_bottom = [name2]
         subj_stats = sorted(info["subjects"].items(), key=lambda x: len(x[1]), reverse=True)
         for sid, counts in subj_stats:
             row_top.append(subject_names.get(sid, sid))
             avg_s = mean(counts) if counts else 0
             row_bottom.append(f"{len(counts)} | {avg_s:.1f}")
+        # pad to max subjects
+        row_top += [""] * (max_subj - len(subj_stats))
+        row_bottom += [""] * (max_subj - len(subj_stats))
         rows.append(row_top)
         rows.append(row_bottom)
-    header_top = ["TEACHER_NAME"] + ["SUBJECT_NAME"] * (max(len(r) for r in rows) - 1)
-    header_bottom = [""] + ["CLASSES | AVG"] * (len(header_top) - 1)
+
+    header_top = ["Teacher"] + [f"Subject #{i+1}" for i in range(max_subj)]
+    header_bottom = [""] + ["Classes | Avg" for _ in range(max_subj)]
+
+    center_mask = [False] + [True] * max_subj
+
     # group pairs of rows into combined structure
     combined_rows = []
     for i in range(0, len(rows), 2):
-        r1 = rows[i]
-        r2 = rows[i + 1]
-        combined_rows.append(r1)
-        combined_rows.append(r2)
-    return _format_table(combined_rows, header_top, header_bottom)
+        combined_rows.append(rows[i])
+        combined_rows.append(rows[i + 1])
+
+    return _format_table(combined_rows, header_top, header_bottom, center_mask)
 
 
 def _student_table(students, subjects_order, student_names, subject_names):
-    header_top = ["STUDENT"]
-    header_bottom = ["NAME"]
-    for sid in subjects_order:
-        h1, h2 = _split_two_parts(subject_names.get(sid, sid))
-        header_top.append(h1)
-        header_bottom.append(h2)
+    header_top = ["Student"] + [f"Subject #{i+1}" for i in range(len(subjects_order))] + ["Total"]
+    header_bottom = ["Name"] + ["Lessons" for _ in subjects_order] + ["Hours"]
 
     rows = []
     for sid in sorted(students.keys(), key=lambda x: student_names.get(x, x)):
-        row = [student_names.get(sid, sid)]
+        name1, name2 = _split_two_parts(student_names.get(sid, sid))
+        row_top = [name1]
+        row_bottom = [name2]
         subj_map = students[sid]
+        total_hours = 0
         for sub in subjects_order:
-            val = subj_map.get(sub, "")
-            row.append(val if val else "")
-        rows.append(row)
+            row_top.append(subject_names.get(sub, sub))
+            hours = subj_map.get(sub, 0)
+            row_bottom.append(str(hours) if hours else "")
+            total_hours += hours
+        row_top.append("")
+        row_bottom.append(str(total_hours))
+        rows.append(row_top)
+        rows.append(row_bottom)
 
-    return _format_table(rows, header_top, header_bottom)
+    center_mask = [False] + [True] * len(subjects_order) + [True]
+    return _format_table(rows, header_top, header_bottom, center_mask)
 
 
 def _subject_table(subjects, subject_names):
@@ -352,8 +377,9 @@ def _subject_table(subjects, subject_names):
         avg_size = mean(info["class_sizes"]) if info["class_sizes"] else 0
         rows.append([name, str(total_students), str(teachers_cnt), f"{avg_size:.1f}"])
 
-    header = ["SUBJECT", "STUDENTS", "TEACHERS", "AVG_CLASS"]
-    return _format_table(rows, header)
+    header = ["Subject", "Students", "Teachers", "Avg class"]
+    center_mask = [False, True, True, True]
+    return _format_table(rows, header, center_mask=center_mask)
 
 
 def report_analysis(schedule, data):

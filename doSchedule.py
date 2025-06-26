@@ -237,30 +237,38 @@ def analyse_subjects(schedule):
     return subj_students
 
 
-def report_analysis(schedule):
+def report_analysis(schedule, data):
     teachers = analyse_teachers(schedule)
     students = analyse_students(schedule)
     subjects = analyse_subjects(schedule)
+
+    teacher_names = {tid: info.get("name", tid) for tid, info in data.get("teachers", {}).items()}
+    student_names = {sid: info.get("name", sid) for sid, info in data.get("students", {}).items()}
+    subject_names = {sid: info.get("name", sid) for sid, info in data.get("subjects", {}).items()}
 
     lines = []
     lines.append("=== Teachers ===")
     for tid, info in sorted(teachers.items(), key=lambda x: x[1]["blocks"], reverse=True):
         avg = mean(info["students"]) if info["students"] else 0
-        parts = [f"{tid}: {info['blocks']} blocks, {avg:.1f} students/class\n"]
+        tname = teacher_names.get(tid, tid)
+        parts = [f"{tname}: {info['blocks']} blocks, {avg:.1f} students/class\n"]
         subj_stats = sorted(info["subjects"].items(), key=lambda x: len(x[1]), reverse=True)
         for subj, counts in subj_stats:
             avg_s = mean(counts) if counts else 0
-            parts.append(f"{subj}: {len(counts)} {avg_s:.1f};")
+            sname = subject_names.get(subj, subj)
+            parts.append(f"{sname}: {len(counts)} {avg_s:.1f};")
         lines.append(" ".join(parts))
 
     lines.append("\n=== Students ===")
     for sid, subj_map in sorted(students.items()):
-        parts = [sid] + [f"{subj}: {hrs}" for subj, hrs in sorted(subj_map.items())]
+        sname = student_names.get(sid, sid)
+        parts = [sname] + [f"{subject_names.get(subj, subj)}: {hrs}" for subj, hrs in sorted(subj_map.items())]
         lines.append("; ".join(parts))
 
     lines.append("\n=== Subjects ===")
     for subj, stus in sorted(subjects.items(), key=lambda x: len(x[1]), reverse=True):
-        lines.append(f"{subj}: {len(stus)} students")
+        sname = subject_names.get(subj, subj)
+        lines.append(f"{sname}: {len(stus)} students")
 
     print("\n".join(lines))
 
@@ -304,7 +312,7 @@ def main():
         ans = input("Show analysis? [y/N] ")
         show_analysis = ans.strip().lower().startswith("y")
     if show_analysis:
-        report_analysis(schedule)
+        report_analysis(schedule, data)
 
 
 if __name__ == "__main__":

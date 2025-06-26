@@ -246,12 +246,12 @@ def report_analysis(schedule):
     lines.append("=== Teachers ===")
     for tid, info in sorted(teachers.items(), key=lambda x: x[1]["blocks"], reverse=True):
         avg = mean(info["students"]) if info["students"] else 0
-        parts = [f"{tid}: {info['blocks']} blocks, {avg:.1f} students/class"]
+        parts = [f"{tid}: {info['blocks']} blocks, {avg:.1f} students/class\n"]
         subj_stats = sorted(info["subjects"].items(), key=lambda x: len(x[1]), reverse=True)
         for subj, counts in subj_stats:
             avg_s = mean(counts) if counts else 0
-            parts.append(f"{subj}: {len(counts)} blocks, {avg_s:.1f} students/class")
-        lines.append("; ".join(parts))
+            parts.append(f"{subj}: {len(counts)} {avg_s:.1f};")
+        lines.append(" ".join(parts))
 
     lines.append("\n=== Students ===")
     for sid, subj_map in sorted(students.items()):
@@ -295,9 +295,7 @@ def main():
     schedule = extract(solver, y, B, pairs, students)
 
     with open(out_path, "w", encoding="utf-8") as f:
-        f.write("const blocks = ")
         json.dump(schedule, f, ensure_ascii=False, indent=2)
-        f.write(";\n")
     print(f"Schedule written to {out_path}")
 
     if auto_yes:

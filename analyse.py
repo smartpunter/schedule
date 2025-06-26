@@ -63,7 +63,6 @@ def report_students(student_hours):
         print(sid)
         parts = [f"{subj}: {hours}" for subj, hours in sorted(subj_map.items())]
         print('; '.join(parts))
-        print()
 
 
 def report_subjects(subj_students):
@@ -71,7 +70,6 @@ def report_subjects(subj_students):
     sorted_subj = sorted(subj_students.items(), key=lambda x: len(x[1]), reverse=True)
     for subj, students in sorted_subj:
         print(f"{subj}: {len(students)} students")
-        print()
 
 
 def main():

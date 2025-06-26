@@ -173,7 +173,15 @@ def build_model(data, limits):
         model.AddMaxEquality(block_used[b], [class_used[(b, s, t)] for s, t in pairs])
 
     model.Add(sum(block_used[b] for b in range(B)) <= limits["MAX_BLOCKS"])
-    model.Minimize(sum(block_used[b] for b in range(B)))
+
+    # Optimise primarily for minimum number of blocks and secondarily for
+    # minimum number of classes to reduce teacher hours.  To achieve this we
+    # use a weighted objective where the block count has a dominant weight that
+    # exceeds any possible number of classes.
+    num_blocks = sum(block_used[b] for b in range(B))
+    num_classes = sum(class_used[(b, s, t)] for b in range(B) for s, t in pairs)
+    big_M = B * limits["MAX_CLASSES_PER_BLOCK"] + 1
+    model.Minimize(num_blocks * big_M + num_classes)
 
     return model, y, class_used, block_used, B, pairs, students
 

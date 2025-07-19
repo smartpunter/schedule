@@ -62,6 +62,12 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
 
     model = cp_model.CpModel()
     penalty_val = cfg.get("penalties", {}).get("unoptimalSlot", [0])[0]
+    settings = cfg.get("settings", {})
+    stud_weight = settings.get("studentsPenaltyWeight", [1])[0]
+    default_student_imp = settings.get("defaultStudentImportance", [0])[0]
+    student_importance = {
+        s["name"]: s.get("importance", default_student_imp) for s in students
+    }
 
     # candidate variables for each subject class
     candidates: Dict[tuple, List[Dict[str, Any]]] = {}
@@ -91,6 +97,8 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                             var = model.NewBoolVar(
                                 f"x_{sid}_{idx}_{dname}_{start}_{teacher}_{cab}"
                             )
+                            diff = abs(start - subj.get("optimalSlot", 0))
+                            stud_pen = sum(student_importance[s] for s in enrolled)
                             cand_list.append(
                                 {
                                     "var": var,
@@ -101,8 +109,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                                     "length": length,
                                     "size": class_size,
                                     "students": enrolled,
-                                    "penalty": abs(start - subj.get("optimalSlot", 0))
-                                    * penalty_val,
+                                    "penalty": diff * penalty_val * stud_pen * stud_weight,
                                 }
                             )
             if not cand_list:
@@ -198,6 +205,8 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                             "cabinet": c["cabinet"],
                             "students": c["students"],
                             "size": c["size"],
+                            "start": c["start"],
+                            "length": c["length"],
                         }
                     )
 
@@ -266,6 +275,64 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
                 else:
                     student_state[st][name][s] = "gap"
 
+    settings = cfg.get("settings", {})
+    penalties_cfg = {k: v[0] for k, v in cfg.get("penalties", {}).items()}
+    teachers_w = settings.get("teachersPenaltyWeight", [1])[0]
+    students_w = settings.get("studentsPenaltyWeight", [1])[0]
+    def_teacher_imp = settings.get("defaultTeacherImportance", [1])[0]
+    def_student_imp = settings.get("defaultStudentImportance", [0])[0]
+    teacher_importance = {
+        t["name"]: t.get("importance", def_teacher_imp)
+        for t in cfg.get("teachers", [])
+    }
+    student_importance = {
+        s["name"]: s.get("importance", def_student_imp)
+        for s in cfg.get("students", [])
+    }
+    default_opt = settings.get("defaultOptimalSlot", [0])[0]
+
+    slot_penalties = {
+        day["name"]: {slot: {k: 0 for k in penalties_cfg} for slot in day["slots"]}
+        for day in cfg["days"]
+    }
+
+    # calculate penalties per slot using individual importance
+    for day in cfg["days"]:
+        dname = day["name"]
+        for slot in day["slots"]:
+            # gap penalties for teachers
+            for t in teacher_names:
+                if teacher_state[t][dname][slot] == "gap":
+                    p = penalties_cfg.get("gapTeacher", 0) * teacher_importance[t] * teachers_w
+                    slot_penalties[dname][slot]["gapTeacher"] += p
+            # gap penalties for students
+            for sname in student_names:
+                if student_state[sname][dname][slot] == "gap":
+                    p = penalties_cfg.get("gapStudent", 0) * student_importance[sname] * students_w
+                    slot_penalties[dname][slot]["gapStudent"] += p
+
+    # penalties for unoptimal slots, assigned at class start
+    for day in cfg["days"]:
+        dname = day["name"]
+        for slot in day["slots"]:
+            for cls in schedule[dname][slot]:
+                if slot != cls["start"]:
+                    continue
+                sid = cls["subject"]
+                opt = cfg["subjects"][sid].get("optimalSlot", default_opt)
+                diff = abs(cls["start"] - opt)
+                if diff == 0:
+                    continue
+                base = penalties_cfg.get("unoptimalSlot", 0) * diff
+                for sname in cls["students"]:
+                    p = base * student_importance[sname] * students_w
+                    slot_penalties[dname][slot]["unoptimalSlot"] += p
+
+    total_penalty = 0
+    for day_map in slot_penalties.values():
+        for pen in day_map.values():
+            total_penalty += sum(pen.values())
+
     export = {"days": []}
     for day in cfg["days"]:
         name = day["name"]
@@ -281,8 +348,10 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
                 "classes": classes,
                 "gaps": {"students": gaps_students, "teachers": gaps_teachers},
                 "home": {"students": home_students, "teachers": home_teachers},
+                "penalty": slot_penalties[name][slot],
             })
         export["days"].append({"name": name, "slots": slot_list})
+    export["totalPenalty"] = total_penalty
 
     return export
 

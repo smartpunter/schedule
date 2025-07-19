@@ -79,10 +79,18 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
         t["name"]: t.get("importance", default_teacher_imp) for t in teachers
     }
 
-    # candidate variables for each subject class
+    # candidate variables for each subject class (day/start only)
     candidates: Dict[tuple, List[Dict[str, Any]]] = {}
-    # integer variables storing chosen day index for each class
+    # chosen day index for each class
     class_day_idx: Dict[tuple, cp_model.IntVar] = {}
+    # teacher and cabinet selections for every class
+    class_teacher: Dict[tuple, cp_model.IntVar] = {}
+    class_cabinet: Dict[tuple, cp_model.IntVar] = {}
+    teacher_choice: Dict[tuple, cp_model.BoolVar] = {}
+    cabinet_choice: Dict[tuple, cp_model.BoolVar] = {}
+    # helper mapping for allowed teacher/cabinet choices
+    teacher_index = {name: i for i, name in enumerate(teacher_names)}
+    cabinet_index = {name: i for i, name in enumerate(cabinets)}
 
     for sid, subj in subjects.items():
         allowed_teachers = subject_teachers.get(sid)
@@ -102,38 +110,59 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                 for start in slots:
                     if start + length - 1 > slots[-1]:
                         continue
-                    for teacher in allowed_teachers:
-                        for cab in allowed_cabinets:
-                            if cabinets[cab]["capacity"] < class_size:
-                                continue
-                            var = model.NewBoolVar(
-                                f"x_{sid}_{idx}_{dname}_{start}_{teacher}_{cab}"
-                            )
-                            diff = abs(start - subj.get("optimalSlot", 0))
-                            stud_pen = sum(
-                                student_importance[s] * student_size[s]
-                                for s in enrolled
-                            )
-                            cand_list.append(
-                                {
-                                    "var": var,
-                                    "day": dname,
-                                    "day_idx": day_idx,
-                                    "start": start,
-                                    "teacher": teacher,
-                                    "cabinet": cab,
-                                    "length": length,
-                                    "size": class_size,
-                                    "students": enrolled,
-                                    "penalty": diff * penalty_val * stud_pen * stud_weight,
-                                }
-                            )
+                    var = model.NewBoolVar(f"x_{sid}_{idx}_{dname}_{start}")
+                    diff = abs(start - subj.get("optimalSlot", 0))
+                    stud_pen = sum(
+                        student_importance[s] * student_size[s]
+                        for s in enrolled
+                    )
+                    cand_list.append(
+                        {
+                            "var": var,
+                            "day": dname,
+                            "day_idx": day_idx,
+                            "start": start,
+                            "length": length,
+                            "size": class_size,
+                            "students": enrolled,
+                            "penalty": diff * penalty_val * stud_pen * stud_weight,
+                        }
+                    )
             if not cand_list:
                 raise RuntimeError(f"No slot for subject {sid} class {idx}")
             model.Add(sum(c["var"] for c in cand_list) == 1)
             day_var = model.NewIntVar(0, len(days) - 1, f"day_idx_{sid}_{idx}")
             model.Add(day_var == sum(c["day_idx"] * c["var"] for c in cand_list))
             class_day_idx[key] = day_var
+            teacher_domain = [teacher_index[t] for t in allowed_teachers]
+            class_teacher[key] = model.NewIntVarFromDomain(
+                cp_model.Domain.FromValues(teacher_domain),
+                f"teacher_{sid}_{idx}",
+            )
+            # helper booleans for chosen teacher
+            for t in allowed_teachers:
+                tv = model.NewBoolVar(f"is_{sid}_{idx}_teacher_{t}")
+                model.Add(class_teacher[key] == teacher_index[t]).OnlyEnforceIf(tv)
+                model.Add(class_teacher[key] != teacher_index[t]).OnlyEnforceIf(tv.Not())
+                teacher_choice[(sid, idx, t)] = tv
+            cab_domain = [
+                cabinet_index[c]
+                for c in allowed_cabinets
+                if cabinets[c]["capacity"] >= class_size
+            ]
+            if not cab_domain:
+                raise RuntimeError(f"No cabinet for subject {sid} class {idx}")
+            class_cabinet[key] = model.NewIntVarFromDomain(
+                cp_model.Domain.FromValues(cab_domain),
+                f"cab_{sid}_{idx}",
+            )
+            for c in allowed_cabinets:
+                if cabinets[c]["capacity"] < class_size:
+                    continue
+                cv = model.NewBoolVar(f"is_{sid}_{idx}_cab_{c}")
+                model.Add(class_cabinet[key] == cabinet_index[c]).OnlyEnforceIf(cv)
+                model.Add(class_cabinet[key] != cabinet_index[c]).OnlyEnforceIf(cv.Not())
+                cabinet_choice[(sid, idx, c)] = cv
             candidates[key] = cand_list
 
     # at most one class of same subject per day
@@ -165,29 +194,38 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
             for teacher in teacher_names:
                 involved = []
                 for (sid, idx), cand_list in candidates.items():
+                    if teacher not in subject_teachers[sid]:
+                        continue
+                    tv = teacher_choice[(sid, idx, teacher)]
                     for c in cand_list:
-                        if (
-                            c["teacher"] == teacher
-                            and c["day"] == dname
-                            and slot in range(c["start"], c["start"] + c["length"])
-                        ):
-                            involved.append(c["var"])
+                        if c["day"] == dname and slot in range(c["start"], c["start"] + c["length"]):
+                            b = model.NewBoolVar(
+                                f"teach_{sid}_{idx}_{teacher}_{dname}_{slot}_{c['start']}"
+                            )
+                            model.Add(b <= tv)
+                            model.Add(b <= c["var"])
+                            model.Add(b >= tv + c["var"] - 1)
+                            involved.append(b)
                 if involved:
                     model.Add(sum(involved) <= 1)
 
             for cab in cabinets:
                 involved = []
-                for cand_list in candidates.values():
+                for (sid, idx), cand_list in candidates.items():
+                    if (sid, idx, cab) not in cabinet_choice:
+                        continue
+                    cv = cabinet_choice[(sid, idx, cab)]
                     for c in cand_list:
-                        if (
-                            c["cabinet"] == cab
-                            and c["day"] == dname
-                            and slot in range(c["start"], c["start"] + c["length"])
-                        ):
-                            involved.append(c["var"])
+                        if c["day"] == dname and slot in range(c["start"], c["start"] + c["length"]):
+                            b = model.NewBoolVar(
+                                f"cab_{sid}_{idx}_{cab}_{dname}_{slot}_{c['start']}"
+                            )
+                            model.Add(b <= cv)
+                            model.Add(b <= c["var"])
+                            model.Add(b >= cv + c["var"] - 1)
+                            involved.append(b)
                 if involved:
                     model.Add(sum(involved) <= 1)
-
 
             for stu in students:
                 sname = stu["name"]
@@ -212,14 +250,19 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
             for t in teacher_names:
                 var = model.NewBoolVar(f"teach_{t}_{dname}_{slot}")
                 involved = []
-                for cand_list in candidates.values():
+                for (sid, idx), cand_list in candidates.items():
+                    if t not in subject_teachers[sid]:
+                        continue
+                    tv = teacher_choice[(sid, idx, t)]
                     for c in cand_list:
-                        if (
-                            c["teacher"] == t
-                            and c["day"] == dname
-                            and slot in range(c["start"], c["start"] + c["length"])
-                        ):
-                            involved.append(c["var"])
+                        if c["day"] == dname and slot in range(c["start"], c["start"] + c["length"]):
+                            b = model.NewBoolVar(
+                                f"tvar_{sid}_{idx}_{t}_{dname}_{slot}_{c['start']}"
+                            )
+                            model.Add(b <= tv)
+                            model.Add(b <= c["var"])
+                            model.Add(b >= tv + c["var"] - 1)
+                            involved.append(b)
                 if involved:
                     model.AddMaxEquality(var, involved)
                 else:
@@ -377,14 +420,18 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
 
     schedule = _init_schedule(days)
     for (sid, idx), cand_list in candidates.items():
+        teach_idx = solver.Value(class_teacher[(sid, idx)])
+        cab_idx = solver.Value(class_cabinet[(sid, idx)])
+        teacher_name = teacher_names[teach_idx]
+        cabinet_name = list(cabinets.keys())[cab_idx]
         for c in cand_list:
             if solver.Value(c["var"]):
                 for s in range(c["start"], c["start"] + c["length"]):
                     schedule[c["day"]][s].append(
                         {
                             "subject": sid,
-                            "teacher": c["teacher"],
-                            "cabinet": c["cabinet"],
+                            "teacher": teacher_name,
+                            "cabinet": cabinet_name,
                             "students": c["students"],
                             "size": c["size"],
                             "start": c["start"],

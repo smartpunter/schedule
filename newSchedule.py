@@ -1,6 +1,7 @@
 import json
 import sys
 from typing import Dict, List, Any
+from ortools.sat.python import cp_model
 
 
 def load_config(path: str = "schedule-config.json") -> Dict[str, Any]:
@@ -38,13 +39,14 @@ def _init_schedule(days: List[Dict[str, Any]]) -> Dict[str, Dict[int, List[Dict[
 
 
 def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]]]:
-    """Construct naive schedule ignoring penalties."""
+    """Build schedule using CP-SAT optimisation."""
     days = cfg["days"]
     subjects = cfg["subjects"]
     teachers = cfg.get("teachers", [])
     students = cfg.get("students", [])
     cabinets = cfg.get("cabinets", {})
 
+    teacher_names = [t["name"] for t in teachers]
     teacher_map = {t["name"]: set(t["subjects"]) for t in teachers}
     subject_teachers = {
         sid: [t for t in teacher_map if sid in teacher_map[t]] for sid in subjects
@@ -58,20 +60,11 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
         for sid in stu["subjects"]:
             students_by_subject.setdefault(sid, []).append(name)
 
-    schedule = _init_schedule(days)
+    model = cp_model.CpModel()
+    penalty_val = cfg.get("penalties", {}).get("unoptimalSlot", [0])[0]
 
-    teacher_busy = {
-        t["name"]: {day["name"]: {s: False for s in day["slots"]} for day in days}
-        for t in teachers
-    }
-    student_busy = {
-        stu["name"]: {day["name"]: {s: False for s in day["slots"]} for day in days}
-        for stu in students
-    }
-    cabinet_busy = {
-        cid: {day["name"]: {s: False for s in day["slots"]} for day in days}
-        for cid in cabinets
-    }
+    # candidate variables for each subject class
+    candidates: Dict[tuple, List[Dict[str, Any]]] = {}
 
     for sid, subj in subjects.items():
         allowed_teachers = subject_teachers.get(sid)
@@ -82,57 +75,126 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
         enrolled = students_by_subject.get(sid, [])
         class_size = sum(student_size[s] for s in enrolled)
 
-        used_days = set()
         for idx, length in enumerate(class_lengths):
-            placed = False
+            key = (sid, idx)
+            cand_list = []
             for day in days:
                 dname = day["name"]
-                if dname in used_days:
-                    continue
                 slots = day["slots"]
                 for start in slots:
                     if start + length - 1 > slots[-1]:
                         continue
-                    span = range(start, start + length)
                     for teacher in allowed_teachers:
-                        if any(teacher_busy[teacher][dname][s] for s in span):
-                            continue
                         for cab in allowed_cabinets:
                             if cabinets[cab]["capacity"] < class_size:
                                 continue
-                            if any(cabinet_busy[cab][dname][s] for s in span):
-                                continue
-                            if any(
-                                student_busy[stu][dname][s]
-                                for stu in enrolled
-                                for s in span
-                            ):
-                                continue
-                            # assign class
-                            info = {
-                                "subject": sid,
-                                "teacher": teacher,
-                                "cabinet": cab,
-                                "students": enrolled,
-                                "group": class_size,
-                            }
-                            for s in span:
-                                schedule[dname][s].append(info)
-                                teacher_busy[teacher][dname][s] = True
-                                cabinet_busy[cab][dname][s] = True
-                                for stu in enrolled:
-                                    student_busy[stu][dname][s] = True
-                            used_days.add(dname)
-                            placed = True
-                            break
-                        if placed:
-                            break
-                    if placed:
-                        break
-                if placed:
-                    break
-            if not placed:
-                raise RuntimeError(f"Cannot place subject {sid} class {idx}")
+                            var = model.NewBoolVar(
+                                f"x_{sid}_{idx}_{dname}_{start}_{teacher}_{cab}"
+                            )
+                            cand_list.append(
+                                {
+                                    "var": var,
+                                    "day": dname,
+                                    "start": start,
+                                    "teacher": teacher,
+                                    "cabinet": cab,
+                                    "length": length,
+                                    "size": class_size,
+                                    "students": enrolled,
+                                    "penalty": abs(start - subj.get("optimalSlot", 0))
+                                    * penalty_val,
+                                }
+                            )
+            if not cand_list:
+                raise RuntimeError(f"No slot for subject {sid} class {idx}")
+            model.Add(sum(c["var"] for c in cand_list) == 1)
+            candidates[key] = cand_list
+
+    # at most one class of same subject per day
+    for sid, subj in subjects.items():
+        class_count = len(subj["classes"])
+        if class_count <= 1:
+            continue
+        for day in days:
+            vars_in_day = []
+            for idx in range(class_count):
+                vars_in_day.extend(
+                    c["var"]
+                    for c in candidates[(sid, idx)]
+                    if c["day"] == day["name"]
+                )
+            if vars_in_day:
+                model.Add(sum(vars_in_day) <= 1)
+
+    # teacher/student/cabinet conflicts
+    for day in days:
+        dname = day["name"]
+        for slot in day["slots"]:
+            for teacher in teacher_names:
+                involved = []
+                for (sid, idx), cand_list in candidates.items():
+                    for c in cand_list:
+                        if (
+                            c["teacher"] == teacher
+                            and c["day"] == dname
+                            and slot in range(c["start"], c["start"] + c["length"])
+                        ):
+                            involved.append(c["var"])
+                if involved:
+                    model.Add(sum(involved) <= 1)
+
+            for cab in cabinets:
+                involved = []
+                for cand_list in candidates.values():
+                    for c in cand_list:
+                        if (
+                            c["cabinet"] == cab
+                            and c["day"] == dname
+                            and slot in range(c["start"], c["start"] + c["length"])
+                        ):
+                            involved.append(c["var"])
+                if involved:
+                    model.Add(sum(involved) <= 1)
+
+            for stu in students:
+                sname = stu["name"]
+                involved = []
+                for (sid, idx), cand_list in candidates.items():
+                    if sname not in students_by_subject.get(sid, []):
+                        continue
+                    for c in cand_list:
+                        if c["day"] == dname and slot in range(
+                            c["start"], c["start"] + c["length"]
+                        ):
+                            involved.append(c["var"])
+                if involved:
+                    model.Add(sum(involved) <= 1)
+
+    # objective
+    model.Minimize(
+        sum(c["penalty"] * c["var"] for cand_list in candidates.values() for c in cand_list)
+    )
+
+    solver = cp_model.CpSolver()
+    solver.parameters.max_time_in_seconds = 30
+    status = solver.Solve(model)
+    if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        raise RuntimeError("No feasible schedule found")
+
+    schedule = _init_schedule(days)
+    for (sid, idx), cand_list in candidates.items():
+        for c in cand_list:
+            if solver.Value(c["var"]):
+                for s in range(c["start"], c["start"] + c["length"]):
+                    schedule[c["day"]][s].append(
+                        {
+                            "subject": sid,
+                            "teacher": c["teacher"],
+                            "cabinet": c["cabinet"],
+                            "students": c["students"],
+                            "size": c["size"],
+                        }
+                    )
 
     return schedule
 
@@ -210,6 +272,7 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
             home_students = [s for s in student_names if student_state[s][name][slot] == "home"]
             home_teachers = [t for t in teacher_names if teacher_state[t][name][slot] == "home"]
             slot_list.append({
+                "slotIndex": slot,
                 "classes": classes,
                 "gaps": {"students": gaps_students, "teachers": gaps_teachers},
                 "home": {"students": home_students, "teachers": home_teachers},

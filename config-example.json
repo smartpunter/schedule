@@ -1,4 +1,9 @@
 {
+  "model": {
+    "maxTime": 300,
+    "workers": 10,
+    "showProgress": true
+  },
   "settings": {
     "defaultTeacherImportance": [1, "Default teacher importance"],
     "defaultStudentImportance": [0, "Default student importance"],

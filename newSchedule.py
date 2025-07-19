@@ -176,10 +176,11 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
     )
 
     solver = cp_model.CpSolver()
-    
-    solver.parameters.max_time_in_seconds = 300
-    solver.parameters.num_search_workers = 10
-    solver.parameters.log_search_progress = True
+
+    model_params = cfg.get("model", {})
+    solver.parameters.max_time_in_seconds = model_params.get("maxTime", 300)
+    solver.parameters.num_search_workers = model_params.get("workers", 10)
+    solver.parameters.log_search_progress = model_params.get("showProgress", False)
 
     status = solver.Solve(model)
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):

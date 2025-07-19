@@ -1,0 +1,58 @@
+{
+  "settings": {
+    "defaultTeacherImportance": [1, "Default teacher importance"],
+    "defaultStudentImportance": [0, "Default student importance"],
+    "defaultOptimalSlot": [3, "Default optimal slot for subjects with unspecified optimal slot"],
+    "maxTeacherSlots": [5, "Maximum amount of slots in a row, which can be assigned to teacher"],
+    "maxStudentSlots": [5, "Maximum amount of slots in a row, which can be assigned to student"],
+    "teachersPenaltyWeight": [1, "Multiplier for teachers penalties, the higher this number, the more we try to please students"],
+    "studentsPenaltyWeight": [1, "Multiplier for students penalties, the higher this number, the more we try to please students"]
+  },
+  "penalties": {
+    "gapTeacher": [10, "Penalty for having gap in teacher schedule"],
+    "gapStudent": [6, "Penalty for having gap in student schedule"],
+    "unoptimalSlot": [1, "Penalty for not having subject at optimal slot."]
+  },
+
+  "days": [
+    { "name": "Monday",    "slots": [0, 1, 2, 3, 4, 5, 6, 7] },
+    { "name": "Tuesday",   "slots": [0, 1, 2, 3, 4, 5, 6, 7] },
+    { "name": "Wednesday", "slots": [0, 1, 2, 3, 4, 5, 6, 7] },
+    { "name": "Thursday",  "slots": [0, 1, 2, 3, 4, 5, 6   ] },
+    { "name": "Friday",    "slots": [0, 1, 2, 3, 4, 5      ] }
+  ],
+
+  "cabinets": {
+    "Room #001": { "capacity": 20 },
+    "Room #002": { "capacity": 20 },
+    "Room #011": { "capacity": 10 },
+    "Room #012": { "capacity": 5  }
+  },
+
+  "subjects": {
+    "DP1_English_Literature_SL": { "classes": [2, 1],          "cabinets": ["Room #001"] },
+    "DP2_Mathematics_HL":        { "optimalSlot": 0, "classes": [2, 2, 1]                },
+    "DP2_Business_HL":           { "classes": [2, 1]                                     },
+    "Y11_English_Literature":    { "classes": [2, 1],          "cabinets": ["Room #001"] },
+    "Y11_Mathematics":           { "optimalSlot": 0, "classes": [2, 1, 1]                },
+    "Y11_History":               { "optimalSlot": 5, "classes": [2, 1]                   },
+    "Y11_Geography":             { "optimalSlot": 2, "classes": [2]                      }
+  },
+
+  "teachers": [
+    { "importance": 2, "name": "Nicole", "subjects": ["DP1_English_Literature_SL", "Y11_English_Literature"], "importance": 2 },
+    { "name": "Nick",   "subjects": ["DP2_Mathematics_HL", "Y11_Mathematics"] },
+    { "name": "David",  "subjects": ["Y11_History"] },
+    { "name": "Ana",    "subjects": ["Y11_Geography"] },
+    { "name": "Olga",   "subjects": ["DP2_Business_HL"] }
+  ],
+
+  "students": [
+    { "name": "Mike",      "subjects": ["DP1_English_Literature_SL", "DP2_Mathematics_HL"] },
+    { "name": "Aleksander", "subjects": ["DP1_English_Literature_SL"] },
+    { "name": "Ekaterina",  "subjects": ["DP2_Mathematics_HL", "DP2_Business_HL"] },
+    { "importance": 3, "name": "Daniil", "subjects": ["DP2_Mathematics_HL"] },
+    { "group": 10, "name": "Y11_Students_French",
+      "subjects": ["Y11_English_Literature", "Y11_Mathematics", "Y11_History", "Y11_Geography" ] }
+  ]
+}

@@ -71,6 +71,8 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
 
     # candidate variables for each subject class
     candidates: Dict[tuple, List[Dict[str, Any]]] = {}
+    # integer variables storing chosen day index for each class
+    class_day_idx: Dict[tuple, cp_model.IntVar] = {}
 
     for sid, subj in subjects.items():
         allowed_teachers = subject_teachers.get(sid)
@@ -84,7 +86,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
         for idx, length in enumerate(class_lengths):
             key = (sid, idx)
             cand_list = []
-            for day in days:
+            for day_idx, day in enumerate(days):
                 dname = day["name"]
                 slots = day["slots"]
                 for start in slots:
@@ -103,6 +105,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                                 {
                                     "var": var,
                                     "day": dname,
+                                    "day_idx": day_idx,
                                     "start": start,
                                     "teacher": teacher,
                                     "cabinet": cab,
@@ -115,6 +118,9 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
             if not cand_list:
                 raise RuntimeError(f"No slot for subject {sid} class {idx}")
             model.Add(sum(c["var"] for c in cand_list) == 1)
+            day_var = model.NewIntVar(0, len(days) - 1, f"day_idx_{sid}_{idx}")
+            model.Add(day_var == sum(c["day_idx"] * c["var"] for c in cand_list))
+            class_day_idx[key] = day_var
             candidates[key] = cand_list
 
     # at most one class of same subject per day
@@ -132,6 +138,12 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                 )
             if vars_in_day:
                 model.Add(sum(vars_in_day) <= 1)
+
+        # classes must appear in chronological order across days
+        for idx in range(1, class_count):
+            prev_k = (sid, idx - 1)
+            curr_k = (sid, idx)
+            model.Add(class_day_idx[curr_k] > class_day_idx[prev_k])
 
     # teacher/student/cabinet conflicts
     for day in days:

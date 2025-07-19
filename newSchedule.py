@@ -114,6 +114,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                                 "teacher": teacher,
                                 "cabinet": cab,
                                 "students": enrolled,
+                                "group": class_size,
                             }
                             for s in span:
                                 schedule[dname][s].append(info)
@@ -139,11 +140,82 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
 def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
     """Generate schedule and wrap it in export format."""
     schedule = build_model(cfg)
+
+    teacher_names = [t["name"] for t in cfg.get("teachers", [])]
+    student_names = [s["name"] for s in cfg.get("students", [])]
+
+    teacher_slots = {
+        t: {day["name"]: set() for day in cfg["days"]} for t in teacher_names
+    }
+    student_slots = {
+        s: {day["name"]: set() for day in cfg["days"]} for s in student_names
+    }
+
+    for day in cfg["days"]:
+        name = day["name"]
+        for slot in day["slots"]:
+            for cls in schedule[name][slot]:
+                teacher_slots[cls["teacher"]][name].add(slot)
+                for stu in cls["students"]:
+                    student_slots[stu][name].add(slot)
+
+    teacher_state = {
+        t: {day["name"]: {} for day in cfg["days"]} for t in teacher_names
+    }
+    for t in teacher_names:
+        for day in cfg["days"]:
+            name = day["name"]
+            slots = teacher_slots[t][name]
+            if not slots:
+                for s in day["slots"]:
+                    teacher_state[t][name][s] = "home"
+                continue
+            first, last = min(slots), max(slots)
+            for s in day["slots"]:
+                if s < first or s > last:
+                    teacher_state[t][name][s] = "home"
+                elif s in slots:
+                    teacher_state[t][name][s] = "class"
+                else:
+                    teacher_state[t][name][s] = "gap"
+
+    student_state = {
+        s: {day["name"]: {} for day in cfg["days"]} for s in student_names
+    }
+    for st in student_names:
+        for day in cfg["days"]:
+            name = day["name"]
+            slots = student_slots[st][name]
+            if not slots:
+                for s in day["slots"]:
+                    student_state[st][name][s] = "home"
+                continue
+            last = max(slots)
+            for s in day["slots"]:
+                if s > last:
+                    student_state[st][name][s] = "home"
+                elif s in slots:
+                    student_state[st][name][s] = "class"
+                else:
+                    student_state[st][name][s] = "gap"
+
     export = {"days": []}
     for day in cfg["days"]:
         name = day["name"]
-        slots = [schedule[name][s] for s in day["slots"]]
-        export["days"].append({"name": name, "slots": slots})
+        slot_list = []
+        for slot in day["slots"]:
+            classes = schedule[name][slot]
+            gaps_students = [s for s in student_names if student_state[s][name][slot] == "gap"]
+            gaps_teachers = [t for t in teacher_names if teacher_state[t][name][slot] == "gap"]
+            home_students = [s for s in student_names if student_state[s][name][slot] == "home"]
+            home_teachers = [t for t in teacher_names if teacher_state[t][name][slot] == "home"]
+            slot_list.append({
+                "classes": classes,
+                "gaps": {"students": gaps_students, "teachers": gaps_teachers},
+                "home": {"students": home_students, "teachers": home_teachers},
+            })
+        export["days"].append({"name": name, "slots": slot_list})
+
     return export
 
 

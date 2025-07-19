@@ -1,5 +1,8 @@
 import json
+import os
 import sys
+from collections import defaultdict
+from statistics import mean
 from typing import Dict, List, Any
 from ortools.sat.python import cp_model
 
@@ -596,13 +599,255 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
     return export
 
 
-def main():
-    cfg_file = sys.argv[1] if len(sys.argv) > 1 else "schedule-config.json"
-    cfg = load_config(cfg_file)
-    result = solve(cfg)
-    with open("schedule.json", "w", encoding="utf-8") as fh:
-        json.dump(result, fh, ensure_ascii=False, indent=2)
-    print("Schedule written to schedule.json")
+def analyse_teachers(schedule: Dict[str, Any]) -> Dict[str, Any]:
+    """Gather statistics about teacher workload."""
+    teachers = defaultdict(lambda: {"blocks": 0, "students": [], "subjects": defaultdict(list)})
+    for day in schedule.get("days", []):
+        for slot in day.get("slots", []):
+            for cls in slot.get("classes", []):
+                tid = cls["teacher"]
+                sid = cls["subject"]
+                count = len(cls.get("students", []))
+                teachers[tid]["blocks"] += 1
+                teachers[tid]["students"].append(count)
+                teachers[tid]["subjects"][sid].append(count)
+    return teachers
+
+
+def analyse_students(schedule: Dict[str, Any]) -> Dict[str, Any]:
+    """Calculate hours per subject for every student."""
+    student_hours = defaultdict(lambda: defaultdict(int))
+    for day in schedule.get("days", []):
+        for slot in day.get("slots", []):
+            for cls in slot.get("classes", []):
+                sid = cls["subject"]
+                for st in cls.get("students", []):
+                    student_hours[st][sid] += 1
+    return student_hours
+
+
+def analyse_subjects(schedule: Dict[str, Any]) -> Dict[str, Any]:
+    """Collect information about subjects."""
+    subjects = defaultdict(lambda: {"students": set(), "teachers": set(), "class_sizes": []})
+    for day in schedule.get("days", []):
+        for slot in day.get("slots", []):
+            for cls in slot.get("classes", []):
+                sid = cls["subject"]
+                subjects[sid]["teachers"].add(cls["teacher"])
+                subjects[sid]["students"].update(cls.get("students", []))
+                subjects[sid]["class_sizes"].append(len(cls.get("students", [])))
+    return subjects
+
+
+def _split_two_parts(name: str, max_len: int = 12) -> tuple[str, str]:
+    """Split long names for better table formatting."""
+    if len(name) <= max_len:
+        return name, ""
+    half = len(name) // 2
+    left = name.rfind(" ", 0, half)
+    right = name.find(" ", half)
+    if left == -1 and right == -1:
+        return name[:half], name[half:]
+    if left == -1:
+        idx = right
+    elif right == -1:
+        idx = left
+    else:
+        idx = left if half - left <= right - half else right
+    return name[:idx], name[idx + 1:]
+
+
+def _format_table(rows, header_top=None, header_bottom=None, center_mask=None, join_rows=False):
+    """Return simple ASCII table formatted as text."""
+    col_count = max(len(r) for r in rows) if rows else 0
+    if header_top:
+        col_count = max(col_count, len(header_top))
+    if header_bottom:
+        col_count = max(col_count, len(header_bottom))
+
+    rows = [list(r) + [""] * (col_count - len(r)) for r in rows]
+    if header_top:
+        header_top = list(header_top) + [""] * (col_count - len(header_top))
+    if header_bottom:
+        header_bottom = list(header_bottom) + [""] * (col_count - len(header_bottom))
+
+    if center_mask is None:
+        center_mask = [False] * col_count
+    else:
+        center_mask = list(center_mask) + [False] * (col_count - len(center_mask))
+
+    widths = [0] * col_count
+    sources = rows[:]
+    if header_top:
+        sources.append(header_top)
+    if header_bottom:
+        sources.append(header_bottom)
+    for r in sources:
+        for i, cell in enumerate(r):
+            widths[i] = max(widths[i], len(str(cell)))
+
+    def fmt_row(cells):
+        parts = []
+        for i in range(col_count):
+            text = str(cells[i])
+            if center_mask[i]:
+                parts.append(text.center(widths[i]))
+            else:
+                parts.append(text.ljust(widths[i]))
+        return "| " + " | ".join(parts) + " |"
+
+    sep = "+-" + "-+-".join("-" * w for w in widths) + "-+"
+    lines = [sep]
+    if header_top:
+        lines.append(fmt_row(header_top))
+        if header_bottom:
+            lines.append(fmt_row(header_bottom))
+        lines.append(sep)
+    for idx, row in enumerate(rows):
+        lines.append(fmt_row(row))
+        if join_rows and idx % 2 == 0 and idx + 1 < len(rows):
+            continue
+        lines.append(sep)
+    return "\n".join(lines)
+
+
+def _teacher_table(teachers, teacher_names, subject_names):
+    rows = []
+    max_subj = max((len(info["subjects"]) for info in teachers.values()), default=0)
+
+    def teacher_hours(info):
+        return sum(len(c) for c in info["subjects"].values())
+
+    for tid, info in sorted(teachers.items(), key=lambda x: teacher_hours(x[1]), reverse=True):
+        name1, name2 = _split_two_parts(teacher_names.get(tid, tid))
+        total_hours = teacher_hours(info)
+        row_top = [name1]
+        row_bottom = [name2]
+        subj_stats = sorted(info["subjects"].items(), key=lambda x: len(x[1]), reverse=True)
+        for sid, counts in subj_stats:
+            row_top.append(subject_names.get(sid, sid))
+            avg_s = mean(counts) if counts else 0
+            row_bottom.append(f"{len(counts)} | {avg_s:.1f}")
+        row_top += [""] * (max_subj - len(subj_stats))
+        row_bottom += [""] * (max_subj - len(subj_stats))
+        row_top.append("")
+        row_bottom.append(str(total_hours))
+        rows.append(row_top)
+        rows.append(row_bottom)
+
+    header_top = ["Teacher"] + [f"Subject #{i+1}" for i in range(max_subj)] + ["Total"]
+    header_bottom = [""] + ["Classes | Avg" for _ in range(max_subj)] + ["Hours"]
+    center_mask = [False] + [True] * max_subj + [True]
+    return _format_table(rows, header_top, header_bottom, center_mask, join_rows=True)
+
+
+def _student_list(students, student_names, subject_names):
+    lines = []
+    for sid, subj_map in sorted(students.items(), key=lambda x: sum(x[1].values()), reverse=True):
+        name = student_names.get(sid, sid)
+        subj_count = len(subj_map)
+        total_hours = sum(subj_map.values())
+        parts = []
+        for sub_id, hours in sorted(subj_map.items(), key=lambda x: subject_names.get(x[0], x[0])):
+            parts.append(f"{hours} hours {subject_names.get(sub_id, sub_id)}")
+        line = f"{name} has {subj_count} subjects for {total_hours} hours: " + ", ".join(parts)
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _subject_table(subjects, subject_names):
+    rows = []
+    for sid, info in sorted(subjects.items(), key=lambda x: subject_names.get(x[0], x[0])):
+        name = subject_names.get(sid, sid)
+        total_students = len(info["students"])
+        teachers_cnt = len(info["teachers"])
+        avg_size = mean(info["class_sizes"]) if info["class_sizes"] else 0
+        rows.append([name, str(total_students), str(teachers_cnt), f"{avg_size:.1f}"])
+
+    header = ["Subject", "Students", "Teachers", "Avg class"]
+    center_mask = [False, True, True, True]
+    return _format_table(rows, header, center_mask=center_mask)
+
+
+def report_analysis(schedule: Dict[str, Any], cfg: Dict[str, Any]) -> None:
+    teachers = analyse_teachers(schedule)
+    students = analyse_students(schedule)
+    subjects = analyse_subjects(schedule)
+
+    teacher_names = {t["name"]: t.get("name", t["name"]) for t in cfg.get("teachers", [])}
+    student_names = {s["name"]: s.get("name", s["name"]) for s in cfg.get("students", [])}
+    subject_names = {sid: info.get("name", sid) for sid, info in cfg.get("subjects", {}).items()}
+
+    print("=== Teachers ===")
+    print(_teacher_table(teachers, teacher_names, subject_names))
+
+    print("\n=== Students ===")
+    print(_student_list(students, student_names, subject_names))
+
+    print("\n=== Subjects ===")
+    print(_subject_table(subjects, subject_names))
+
+
+def render_schedule(schedule: Dict[str, Any], cfg: Dict[str, Any]) -> None:
+    """Print schedule grouped by day and slot."""
+    subject_names = {sid: info.get("name", sid) for sid, info in cfg.get("subjects", {}).items()}
+    print()
+    for day in schedule.get("days", []):
+        print(day.get("name", "Unknown"))
+        for slot in day.get("slots", []):
+            idx = slot.get("slotIndex")
+            classes = slot.get("classes", [])
+            if not classes:
+                print(f"  Slot {idx}: --")
+                continue
+            print(f"  Slot {idx}:")
+            for cls in classes:
+                subj = subject_names.get(cls["subject"], cls["subject"])
+                teacher = cls["teacher"]
+                size = len(cls.get("students", []))
+                print(f"    {subj} by {teacher} for {size} students")
+        print()
+
+
+def main() -> None:
+    args = [a for a in sys.argv[1:] if a != "-y"]
+    auto_yes = "-y" in sys.argv[1:]
+
+    cfg_path = args[0] if len(args) >= 1 else "schedule-config.json"
+    out_path = args[1] if len(args) >= 2 else "schedule.json"
+
+    if not os.path.exists(cfg_path):
+        print(f"Config '{cfg_path}' not found.")
+        return
+
+    skip_solve = False
+    if os.path.exists(out_path):
+        if auto_yes:
+            skip_solve = True
+        else:
+            ans = input(f"Schedule file '{out_path}' found. Skip solving and use it? [y/N] ")
+            skip_solve = ans.strip().lower().startswith("y")
+
+    cfg = load_config(cfg_path)
+    if skip_solve:
+        with open(out_path, "r", encoding="utf-8") as fh:
+            result = json.load(fh)
+    else:
+        result = solve(cfg)
+        with open(out_path, "w", encoding="utf-8") as fh:
+            json.dump(result, fh, ensure_ascii=False, indent=2)
+        print(f"Schedule written to {out_path}")
+
+    render_schedule(result, cfg)
+
+    if auto_yes:
+        show_analysis = True
+    else:
+        ans = input("Show analysis? [y/N] ")
+        show_analysis = ans.strip().lower().startswith("y")
+
+    if show_analysis:
+        report_analysis(result, cfg)
 
 
 if __name__ == "__main__":

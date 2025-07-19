@@ -79,199 +79,318 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
         t["name"]: t.get("importance", default_teacher_imp) for t in teachers
     }
 
-    # map names to indices for compact integer variables
-    teacher_index = {name: i for i, name in enumerate(teacher_names)}
-    cabinet_index = {name: i for i, name in enumerate(cabinets)}
-    day_index = {d["name"]: i for i, d in enumerate(days)}
-
-    # offsets for building a continuous horizon for intervals
-    offsets: List[int] = []
-    offs = 0
-    for d in days:
-        offsets.append(offs)
-        offs += len(d["slots"])
-    horizon = offs
-
-    # decision variables for each class
-    class_vars = {}
-    teacher_intervals: Dict[str, List[tuple]] = {n: [] for n in teacher_names}
-    cabinet_intervals: Dict[str, List[tuple]] = {c: [] for c in cabinets}
-    student_intervals: Dict[str, List[tuple]] = {s["name"]: [] for s in students}
-
-    base_penalties = []
+    # candidate variables for each subject class
+    candidates: Dict[tuple, List[Dict[str, Any]]] = {}
+    # integer variables storing chosen day index for each class
+    class_day_idx: Dict[tuple, cp_model.IntVar] = {}
 
     for sid, subj in subjects.items():
-        allowed_teachers = [teacher_index[t] for t in subject_teachers.get(sid, [])]
+        allowed_teachers = subject_teachers.get(sid)
         if not allowed_teachers:
             raise ValueError(f"No teacher available for subject {sid}")
-        allowed_cabinets = [cabinet_index[c] for c in subj.get("cabinets", list(cabinets))]
+        allowed_cabinets = subj.get("cabinets", list(cabinets))
         class_lengths = subj["classes"]
         enrolled = students_by_subject.get(sid, [])
         class_size = sum(student_size[s] for s in enrolled)
 
         for idx, length in enumerate(class_lengths):
-            day_var = model.NewIntVar(0, len(days) - 1, f"day_{sid}_{idx}")
-            slot_var = model.NewIntVar(0, max(len(d["slots"]) for d in days) - 1, f"slot_{sid}_{idx}")
-            allowed = []
-            for d_idx, day in enumerate(days):
-                for s in day["slots"]:
-                    if s + length - 1 <= day["slots"][-1]:
-                        allowed.append([d_idx, s])
-            model.AddAllowedAssignments([day_var, slot_var], allowed)
+            key = (sid, idx)
+            cand_list = []
+            for day_idx, day in enumerate(days):
+                dname = day["name"]
+                slots = day["slots"]
+                for start in slots:
+                    if start + length - 1 > slots[-1]:
+                        continue
+                    for teacher in allowed_teachers:
+                        for cab in allowed_cabinets:
+                            if cabinets[cab]["capacity"] < class_size:
+                                continue
+                            var = model.NewBoolVar(
+                                f"x_{sid}_{idx}_{dname}_{start}_{teacher}_{cab}"
+                            )
+                            diff = abs(start - subj.get("optimalSlot", 0))
+                            stud_pen = sum(
+                                student_importance[s] * student_size[s]
+                                for s in enrolled
+                            )
+                            cand_list.append(
+                                {
+                                    "var": var,
+                                    "day": dname,
+                                    "day_idx": day_idx,
+                                    "start": start,
+                                    "teacher": teacher,
+                                    "cabinet": cab,
+                                    "length": length,
+                                    "size": class_size,
+                                    "students": enrolled,
+                                    "penalty": diff * penalty_val * stud_pen * stud_weight,
+                                }
+                            )
+            if not cand_list:
+                raise RuntimeError(f"No slot for subject {sid} class {idx}")
+            model.Add(sum(c["var"] for c in cand_list) == 1)
+            day_var = model.NewIntVar(0, len(days) - 1, f"day_idx_{sid}_{idx}")
+            model.Add(day_var == sum(c["day_idx"] * c["var"] for c in cand_list))
+            class_day_idx[key] = day_var
+            candidates[key] = cand_list
 
-            teach_var = model.NewIntVarFromDomain(cp_model.Domain.FromValues(allowed_teachers), f"teacher_{sid}_{idx}")
-            cab_var = model.NewIntVarFromDomain(cp_model.Domain.FromValues(allowed_cabinets), f"cab_{sid}_{idx}")
-
-            off_var = model.NewIntVar(0, horizon, f"off_{sid}_{idx}")
-            model.AddElement(day_var, offsets, off_var)
-            start_glob = model.NewIntVar(0, horizon, f"gstart_{sid}_{idx}")
-            end_glob = model.NewIntVar(0, horizon, f"gend_{sid}_{idx}")
-            model.Add(start_glob == slot_var + off_var)
-            model.Add(end_glob == start_glob + length)
-
-            interval = model.NewIntervalVar(start_glob, length, end_glob, f"int_{sid}_{idx}")
-
-            # optional teacher intervals
-            for t_idx in allowed_teachers:
-                tname = teacher_names[t_idx]
-                p = model.NewBoolVar(f"teach_{sid}_{idx}_{tname}")
-                model.Add(teach_var == t_idx).OnlyEnforceIf(p)
-                model.Add(teach_var != t_idx).OnlyEnforceIf(p.Not())
-                t_int = model.NewOptionalIntervalVar(start_glob, length, end_glob, p, f"ti_{sid}_{idx}_{tname}")
-                teacher_intervals[tname].append((t_int, day_var, length, p))
-
-            # optional cabinet intervals
-            for c_idx in allowed_cabinets:
-                cname = list(cabinets)[c_idx]
-                p = model.NewBoolVar(f"cab_{sid}_{idx}_{cname}")
-                model.Add(cab_var == c_idx).OnlyEnforceIf(p)
-                model.Add(cab_var != c_idx).OnlyEnforceIf(p.Not())
-                c_int = model.NewOptionalIntervalVar(start_glob, length, end_glob, p, f"ci_{sid}_{idx}_{cname}")
-                cabinet_intervals[cname].append((c_int, day_var, length, p))
-
-            for sname in enrolled:
-                s_int = model.NewIntervalVar(start_glob, length, end_glob, f"si_{sid}_{idx}_{sname}")
-                student_intervals[sname].append((s_int, day_var, length))
-
-            diff = model.NewIntVar(0, max(len(d["slots"]) for d in days), f"diff_{sid}_{idx}")
-            model.AddAbsEquality(diff, slot_var - subj.get("optimalSlot", 0))
-            stud_pen = sum(student_importance[s] * student_size[s] for s in enrolled)
-            base_penalties.append(diff * penalty_val * stud_pen * stud_weight)
-
-            class_vars[(sid, idx)] = {
-                "day": day_var,
-                "slot": slot_var,
-                "teacher": teach_var,
-                "cab": cab_var,
-                "len": length,
-                "students": enrolled,
-                "size": class_size,
-                "start": start_glob,
-            }
-
-    # at most one class of same subject per day and chronological order
+    # at most one class of same subject per day
     for sid, subj in subjects.items():
-        cls_cnt = len(subj["classes"])
-        for d_idx in range(len(days)):
-            flags = []
-            for idx in range(cls_cnt):
-                b = model.NewBoolVar(f"{sid}_{idx}_d{d_idx}")
-                model.Add(class_vars[(sid, idx)]["day"] == d_idx).OnlyEnforceIf(b)
-                model.Add(class_vars[(sid, idx)]["day"] != d_idx).OnlyEnforceIf(b.Not())
-                flags.append(b)
-            model.Add(sum(flags) <= 1)
-        for i in range(1, cls_cnt):
-            model.Add(class_vars[(sid, i)]["day"] > class_vars[(sid, i - 1)]["day"])
+        class_count = len(subj["classes"])
+        if class_count <= 1:
+            continue
+        for day in days:
+            vars_in_day = []
+            for idx in range(class_count):
+                vars_in_day.extend(
+                    c["var"]
+                    for c in candidates[(sid, idx)]
+                    if c["day"] == day["name"]
+                )
+            if vars_in_day:
+                model.Add(sum(vars_in_day) <= 1)
 
-    # resource conflicts via NoOverlap
-    for tname, items in teacher_intervals.items():
-        model.AddNoOverlap([it[0] for it in items])
-    for cname, items in cabinet_intervals.items():
-        model.AddNoOverlap([it[0] for it in items])
-    for sname, items in student_intervals.items():
-        model.AddNoOverlap([it[0] for it in items])
+        # classes must appear in chronological order across days
+        for idx in range(1, class_count):
+            prev_k = (sid, idx - 1)
+            curr_k = (sid, idx)
+            model.Add(class_day_idx[curr_k] > class_day_idx[prev_k])
 
-    # compute gap variables using working span
+    # teacher/student/cabinet conflicts
+    for day in days:
+        dname = day["name"]
+        for slot in day["slots"]:
+            for teacher in teacher_names:
+                involved = []
+                for (sid, idx), cand_list in candidates.items():
+                    for c in cand_list:
+                        if (
+                            c["teacher"] == teacher
+                            and c["day"] == dname
+                            and slot in range(c["start"], c["start"] + c["length"])
+                        ):
+                            involved.append(c["var"])
+                if involved:
+                    model.Add(sum(involved) <= 1)
+
+            for cab in cabinets:
+                involved = []
+                for cand_list in candidates.values():
+                    for c in cand_list:
+                        if (
+                            c["cabinet"] == cab
+                            and c["day"] == dname
+                            and slot in range(c["start"], c["start"] + c["length"])
+                        ):
+                            involved.append(c["var"])
+                if involved:
+                    model.Add(sum(involved) <= 1)
+
+
+            for stu in students:
+                sname = stu["name"]
+                involved = []
+                for (sid, idx), cand_list in candidates.items():
+                    if sname not in students_by_subject.get(sid, []):
+                        continue
+                    for c in cand_list:
+                        if c["day"] == dname and slot in range(
+                            c["start"], c["start"] + c["length"]
+                        ):
+                            involved.append(c["var"])
+                if involved:
+                    model.Add(sum(involved) <= 1)
+
+    # build slot variables for teachers and students
+    teacher_slot = {}
+    student_slot = {}
+    for day in days:
+        dname = day["name"]
+        for slot in day["slots"]:
+            for t in teacher_names:
+                var = model.NewBoolVar(f"teach_{t}_{dname}_{slot}")
+                involved = []
+                for cand_list in candidates.values():
+                    for c in cand_list:
+                        if (
+                            c["teacher"] == t
+                            and c["day"] == dname
+                            and slot in range(c["start"], c["start"] + c["length"])
+                        ):
+                            involved.append(c["var"])
+                if involved:
+                    model.AddMaxEquality(var, involved)
+                else:
+                    model.Add(var == 0)
+                teacher_slot[(t, dname, slot)] = var
+
+            for stu in students:
+                sname = stu["name"]
+                var = model.NewBoolVar(f"stud_{sname}_{dname}_{slot}")
+                involved = []
+                for (sid, idx), cand_list in candidates.items():
+                    if sname not in students_by_subject.get(sid, []):
+                        continue
+                    for c in cand_list:
+                        if c["day"] == dname and slot in range(
+                            c["start"], c["start"] + c["length"]
+                        ):
+                            involved.append(c["var"])
+                if involved:
+                    model.AddMaxEquality(var, involved)
+                else:
+                    model.Add(var == 0)
+                student_slot[(sname, dname, slot)] = var
+
+    # prefix and suffix to detect gaps
     teacher_gap_vars = []
-    for tname, items in teacher_intervals.items():
-        for d_idx, day in enumerate(days):
-            start_var = model.NewIntVar(0, max(len(d["slots"]) for d in days), f"t_{tname}_{d_idx}_start")
-            end_var = model.NewIntVar(0, max(len(d["slots"]) for d in days), f"t_{tname}_{d_idx}_end")
-            pres = []
-            lengths = []
-            for it, dv, l, p in items:
-                b = model.NewBoolVar(f"use_{tname}_{d_idx}_{id(it)}")
-                model.Add(dv == d_idx).OnlyEnforceIf(b)
-                model.Add(dv != d_idx).OnlyEnforceIf(b.Not())
-                model.Add(p == 1).OnlyEnforceIf(b)
-                model.Add(p == 0).OnlyEnforceIf(b.Not())
-                pres.append(b)
-                lengths.append(l * b)
-                model.Add(start_var <= it.StartExpr()).OnlyEnforceIf(b)
-                model.Add(end_var >= it.EndExpr()).OnlyEnforceIf(b)
-            if pres:
-                total_len = sum(lengths)
-                span = model.NewIntVar(0, max(len(d["slots"]) for d in days), f"span_t_{tname}_{d_idx}")
-                model.Add(span == end_var - start_var)
-                gap = model.NewIntVar(0, max(len(d["slots"]) for d in days), f"gap_t_{tname}_{d_idx}")
-                model.Add(gap == span - total_len)
-                teacher_gap_vars.append((gap, tname))
+    for t in teacher_names:
+        for day in days:
+            dname = day["name"]
+            slots = day["slots"]
+            prefix = {}
+            prev = None
+            for s in slots:
+                curr = teacher_slot[(t, dname, s)]
+                if prev is None:
+                    prefix[s] = curr
+                else:
+                    pv = model.NewBoolVar(f"pref_t_{t}_{dname}_{s}")
+                    model.Add(pv >= prev)
+                    model.Add(pv >= curr)
+                    model.Add(pv <= prev + curr)
+                    prefix[s] = pv
+                prev = prefix[s]
+            suffix = {}
+            nxt = None
+            for s in reversed(slots):
+                curr = teacher_slot[(t, dname, s)]
+                if nxt is None:
+                    suffix[s] = curr
+                else:
+                    sv = model.NewBoolVar(f"suff_t_{t}_{dname}_{s}")
+                    model.Add(sv >= nxt)
+                    model.Add(sv >= curr)
+                    model.Add(sv <= nxt + curr)
+                    suffix[s] = sv
+                nxt = suffix[s]
+            for idx in range(1, len(slots) - 1):
+                s = slots[idx]
+                g = model.NewBoolVar(f"gap_t_{t}_{dname}_{s}")
+                prevp = prefix[slots[idx - 1]]
+                nextp = suffix[slots[idx + 1]]
+                cur = teacher_slot[(t, dname, s)]
+                model.Add(g <= prevp)
+                model.Add(g <= nextp)
+                model.Add(g + cur <= 1)
+                model.Add(g >= prevp + nextp - cur - 1)
+                teacher_gap_vars.append((g, t))
+            if max_teacher_slots > 0:
+                win = max_teacher_slots + 1
+                for start in range(len(slots) - win + 1):
+                    model.Add(
+                        sum(
+                            teacher_slot[(t, dname, slots[k])] for k in range(start, start + win)
+                        )
+                        <= max_teacher_slots
+                    )
 
     student_gap_vars = []
-    for sname, items in student_intervals.items():
-        for d_idx, day in enumerate(days):
-            start_var = model.NewIntVar(0, max(len(d["slots"]) for d in days), f"s_{sname}_{d_idx}_start")
-            end_var = model.NewIntVar(0, max(len(d["slots"]) for d in days), f"s_{sname}_{d_idx}_end")
-            pres = []
-            lengths = []
-            for it, dv, l in items:
-                b = model.NewBoolVar(f"use_{sname}_{d_idx}_{id(it)}")
-                model.Add(dv == d_idx).OnlyEnforceIf(b)
-                model.Add(dv != d_idx).OnlyEnforceIf(b.Not())
-                pres.append(b)
-                lengths.append(l * b)
-                model.Add(start_var <= it.StartExpr()).OnlyEnforceIf(b)
-                model.Add(end_var >= it.EndExpr()).OnlyEnforceIf(b)
-            if pres:
-                total_len = sum(lengths)
-                span = model.NewIntVar(0, max(len(d["slots"]) for d in days), f"span_s_{sname}_{d_idx}")
-                model.Add(span == end_var - start_var)
-                gap = model.NewIntVar(0, max(len(d["slots"]) for d in days), f"gap_s_{sname}_{d_idx}")
-                model.Add(gap == span - total_len)
-                student_gap_vars.append((gap, sname))
+    for stu in students:
+        sname = stu["name"]
+        for day in days:
+            dname = day["name"]
+            slots = day["slots"]
+            prefix = {}
+            prev = None
+            for s in slots:
+                curr = student_slot[(sname, dname, s)]
+                if prev is None:
+                    prefix[s] = curr
+                else:
+                    pv = model.NewBoolVar(f"pref_s_{sname}_{dname}_{s}")
+                    model.Add(pv >= prev)
+                    model.Add(pv >= curr)
+                    model.Add(pv <= prev + curr)
+                    prefix[s] = pv
+                prev = prefix[s]
+            suffix = {}
+            nxt = None
+            for s in reversed(slots):
+                curr = student_slot[(sname, dname, s)]
+                if nxt is None:
+                    suffix[s] = curr
+                else:
+                    sv = model.NewBoolVar(f"suff_s_{sname}_{dname}_{s}")
+                    model.Add(sv >= nxt)
+                    model.Add(sv >= curr)
+                    model.Add(sv <= nxt + curr)
+                    suffix[s] = sv
+                nxt = suffix[s]
+            for idx in range(1, len(slots) - 1):
+                s = slots[idx]
+                g = model.NewBoolVar(f"gap_s_{sname}_{dname}_{s}")
+                prevp = prefix[slots[idx - 1]]
+                nextp = suffix[slots[idx + 1]]
+                cur = student_slot[(sname, dname, s)]
+                model.Add(g <= prevp)
+                model.Add(g <= nextp)
+                model.Add(g + cur <= 1)
+                model.Add(g >= prevp + nextp - cur - 1)
+                student_gap_vars.append((g, sname))
+            if max_student_slots > 0:
+                win = max_student_slots + 1
+                for start in range(len(slots) - win + 1):
+                    model.Add(
+                        sum(
+                            student_slot[(sname, dname, slots[k])] for k in range(start, start + win)
+                        )
+                        <= max_student_slots
+                    )
 
-    base_obj = sum(base_penalties)
-    gap_teacher_expr = sum(gap_teacher_val * teacher_importance[t] * teach_weight * g for g, t in teacher_gap_vars)
-    gap_student_expr = sum(gap_student_val * student_importance[s] * student_size[s] * stud_weight * g for g, s in student_gap_vars)
+    # objective
+    gap_teacher_expr = sum(
+        gap_teacher_val * teacher_importance[t] * teach_weight * var for var, t in teacher_gap_vars
+    )
+    gap_student_expr = sum(
+        gap_student_val
+        * student_importance[s] * student_size[s] * stud_weight * var
+        for var, s in student_gap_vars
+    )
+    base_obj = sum(
+        c["penalty"] * c["var"] for cand_list in candidates.values() for c in cand_list
+    )
     model.Minimize(base_obj + gap_teacher_expr + gap_student_expr)
 
     solver = cp_model.CpSolver()
-    params = cfg.get("model", {})
-    solver.parameters.max_time_in_seconds = params.get("maxTime", 300)
-    solver.parameters.num_search_workers = params.get("workers", 10)
-    solver.parameters.log_search_progress = params.get("showProgress", False)
+
+    model_params = cfg.get("model", {})
+    solver.parameters.max_time_in_seconds = model_params.get("maxTime", 300)
+    solver.parameters.num_search_workers = model_params.get("workers", 10)
+    solver.parameters.log_search_progress = model_params.get("showProgress", False)
 
     status = solver.Solve(model)
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         raise RuntimeError("No feasible schedule found")
 
     schedule = _init_schedule(days)
-    for (sid, idx), vars in class_vars.items():
-        day_idx = solver.Value(vars["day"])
-        start_slot = solver.Value(vars["slot"])
-        teacher_name = teacher_names[solver.Value(vars["teacher"])]
-        cab_name = list(cabinets)[solver.Value(vars["cab"])]
-        day_name = days[day_idx]["name"]
-        for s in range(start_slot, start_slot + vars["len"]):
-            schedule[day_name][s].append({
-                "subject": sid,
-                "teacher": teacher_name,
-                "cabinet": cab_name,
-                "students": vars["students"],
-                "size": vars["size"],
-                "start": start_slot,
-                "length": vars["len"],
-            })
+    for (sid, idx), cand_list in candidates.items():
+        for c in cand_list:
+            if solver.Value(c["var"]):
+                for s in range(c["start"], c["start"] + c["length"]):
+                    schedule[c["day"]][s].append(
+                        {
+                            "subject": sid,
+                            "teacher": c["teacher"],
+                            "cabinet": c["cabinet"],
+                            "students": c["students"],
+                            "size": c["size"],
+                            "start": c["start"],
+                            "length": c["length"],
+                        }
+                    )
 
     return schedule
 

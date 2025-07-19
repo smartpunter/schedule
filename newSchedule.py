@@ -601,13 +601,15 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
 def analyse_teachers(schedule: Dict[str, Any]) -> Dict[str, Any]:
     """Gather statistics about teacher workload."""
-    teachers = defaultdict(lambda: {"blocks": 0, "students": [], "subjects": defaultdict(list)})
+    teachers = defaultdict(
+        lambda: {"blocks": 0, "students": [], "subjects": defaultdict(list)}
+    )
     for day in schedule.get("days", []):
         for slot in day.get("slots", []):
             for cls in slot.get("classes", []):
                 tid = cls["teacher"]
                 sid = cls["subject"]
-                count = len(cls.get("students", []))
+                count = cls.get("size", len(cls.get("students", [])))
                 teachers[tid]["blocks"] += 1
                 teachers[tid]["students"].append(count)
                 teachers[tid]["subjects"][sid].append(count)
@@ -626,16 +628,24 @@ def analyse_students(schedule: Dict[str, Any]) -> Dict[str, Any]:
     return student_hours
 
 
-def analyse_subjects(schedule: Dict[str, Any]) -> Dict[str, Any]:
+def analyse_subjects(schedule: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
     """Collect information about subjects."""
-    subjects = defaultdict(lambda: {"students": set(), "teachers": set(), "class_sizes": []})
+    student_size = {s["name"]: int(s.get("group", 1)) for s in cfg.get("students", [])}
+    subjects = defaultdict(
+        lambda: {"students": set(), "student_count": 0, "teachers": set(), "class_sizes": []}
+    )
     for day in schedule.get("days", []):
         for slot in day.get("slots", []):
             for cls in slot.get("classes", []):
                 sid = cls["subject"]
                 subjects[sid]["teachers"].add(cls["teacher"])
-                subjects[sid]["students"].update(cls.get("students", []))
-                subjects[sid]["class_sizes"].append(len(cls.get("students", [])))
+                subjects[sid]["class_sizes"].append(
+                    cls.get("size", len(cls.get("students", [])))
+                )
+                for stu in cls.get("students", []):
+                    if stu not in subjects[sid]["students"]:
+                        subjects[sid]["students"].add(stu)
+                        subjects[sid]["student_count"] += student_size.get(stu, 1)
     return subjects
 
 
@@ -759,7 +769,7 @@ def _subject_table(subjects, subject_names):
     rows = []
     for sid, info in sorted(subjects.items(), key=lambda x: subject_names.get(x[0], x[0])):
         name = subject_names.get(sid, sid)
-        total_students = len(info["students"])
+        total_students = info.get("student_count", len(info.get("students", [])))
         teachers_cnt = len(info["teachers"])
         avg_size = mean(info["class_sizes"]) if info["class_sizes"] else 0
         rows.append([name, str(total_students), str(teachers_cnt), f"{avg_size:.1f}"])
@@ -772,7 +782,7 @@ def _subject_table(subjects, subject_names):
 def report_analysis(schedule: Dict[str, Any], cfg: Dict[str, Any]) -> None:
     teachers = analyse_teachers(schedule)
     students = analyse_students(schedule)
-    subjects = analyse_subjects(schedule)
+    subjects = analyse_subjects(schedule, cfg)
 
     teacher_names = {t["name"]: t.get("name", t["name"]) for t in cfg.get("teachers", [])}
     student_names = {s["name"]: s.get("name", s["name"]) for s in cfg.get("students", [])}
@@ -791,22 +801,237 @@ def report_analysis(schedule: Dict[str, Any], cfg: Dict[str, Any]) -> None:
 def render_schedule(schedule: Dict[str, Any], cfg: Dict[str, Any]) -> None:
     """Print schedule grouped by day and slot."""
     subject_names = {sid: info.get("name", sid) for sid, info in cfg.get("subjects", {}).items()}
+    student_size = {s["name"]: int(s.get("group", 1)) for s in cfg.get("students", [])}
+
     print()
     for day in schedule.get("days", []):
         print(day.get("name", "Unknown"))
         for slot in day.get("slots", []):
             idx = slot.get("slotIndex")
             classes = slot.get("classes", [])
+            gaps = slot.get("gaps", {})
+            home = slot.get("home", {})
+            gap_t = len(gaps.get("teachers", []))
+            gap_s = sum(student_size.get(n, 1) for n in gaps.get("students", []))
+            home_t = len(home.get("teachers", []))
+            home_s = sum(student_size.get(n, 1) for n in home.get("students", []))
+
+            header = f"  Slot {idx} [gap T:{gap_t} S:{gap_s} home T:{home_t} S:{home_s}]"
             if not classes:
-                print(f"  Slot {idx}: --")
+                print(f"{header}: --")
                 continue
-            print(f"  Slot {idx}:")
+            print(f"{header}:")
             for cls in classes:
                 subj = subject_names.get(cls["subject"], cls["subject"])
                 teacher = cls["teacher"]
-                size = len(cls.get("students", []))
-                print(f"    {subj} by {teacher} for {size} students")
+                size = cls.get("size", len(cls.get("students", [])))
+                length = cls.get("length", 1)
+                start = cls.get("start", idx)
+                part = ""
+                if length > 1:
+                    pno = idx - start + 1
+                    part = f" (part {pno}/{length})"
+                print(f"    {subj} by {teacher} for {size} students, {length}h{part}")
         print()
+
+
+def generate_html(schedule: Dict[str, Any], cfg: Dict[str, Any], path: str = "schedule.html") -> None:
+    """Create interactive HTML overview of the schedule."""
+    schedule_json = json.dumps(schedule, ensure_ascii=False)
+    cfg_json = json.dumps(cfg, ensure_ascii=False)
+    html = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Schedule</title>
+<style>
+body { font-family: Arial, sans-serif; }
+table { border-collapse: collapse; width: 100%; }
+th, td { border: 1px solid #999; padding: 4px; vertical-align: top; }
+th { background: #f0f0f0; }
+.slot-info { font-size: 0.9em; color: #555; margin-top: 2px; }
+.modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); }
+.modal-content { background:#fff; margin:5% auto; padding:20px; width:90%; max-height:90%; overflow:auto; }
+.close { float:right; cursor:pointer; font-size:20px; }
+.clickable { color:#0066cc; cursor:pointer; text-decoration:underline; }
+</style>
+</head>
+<body>
+<h1>Schedule Overview</h1>
+<div id="table"></div>
+<div id="modal" class="modal"><div class="modal-content"><span id="close" class="close">&#10006;</span><div id="modal-body"></div></div></div>
+<script>
+const scheduleData = __SCHEDULE__;
+const configData = __CONFIG__;
+</script>
+<script>
+(function(){
+const modal=document.getElementById('modal');
+const close=document.getElementById('close');
+const modalBody=document.getElementById('modal-body');
+close.onclick=()=>{modal.style.display='none';};
+window.onclick=e=>{if(e.target==modal)modal.style.display='none';};
+const studentSize={};
+(configData.students||[]).forEach(s=>{studentSize[s.name]=s.group||1;});
+function countStudents(list){return(list||[]).reduce((a,n)=>a+(studentSize[n]||1),0);}
+function openModal(html){modalBody.innerHTML=html;modal.style.display='block';}
+
+function buildTable(){
+ const container=document.getElementById('table');
+ const table=document.createElement('table');
+ const header=document.createElement('tr');
+ header.appendChild(document.createElement('th'));
+ scheduleData.days.forEach(d=>{const th=document.createElement('th');th.textContent=d.name;header.appendChild(th);});
+ table.appendChild(header);
+ const maxSlots=Math.max(...scheduleData.days.map(d=>d.slots.length?Math.max(...d.slots.map(s=>s.slotIndex)):0))+1;
+ for(let i=0;i<maxSlots;i++){
+   const tr=document.createElement('tr');
+   const th=document.createElement('th');th.textContent='Slot '+i;tr.appendChild(th);
+   scheduleData.days.forEach(day=>{
+     const slot=day.slots.find(s=>s.slotIndex==i) || {classes:[],gaps:{students:[],teachers:[]},home:{students:[],teachers:[]}};
+     const td=document.createElement('td');
+     slot.classes.forEach(cls=>{
+       const div=document.createElement('div');
+       const subj=(configData.subjects[cls.subject]||{}).name||cls.subject;
+       const part=cls.length>1?(' ('+(i-cls.start+1)+'/'+cls.length+')'):'';
+       div.innerHTML='<span class="clickable subject" data-id="'+cls.subject+'">'+subj+'</span> by <span class="clickable teacher" data-id="'+cls.teacher+'">'+cls.teacher+'</span> ('+cls.size+' st, <span class="clickable cabinet" data-id="'+cls.cabinet+'">'+cls.cabinet+'</span>, '+cls.length+'h'+part+')';
+       td.appendChild(div);
+     });
+     const info=document.createElement('div');
+     info.className='slot-info clickable';
+     info.dataset.day=day.name;info.dataset.slot=i;
+     const gapT=slot.gaps.teachers.length;
+     const gapS=countStudents(slot.gaps.students);
+     const homeT=slot.home.teachers.length;
+     const homeS=countStudents(slot.home.students);
+     info.textContent='gap T'+gapT+' S'+gapS+' home T'+homeT+' S'+homeS;
+     td.appendChild(info);
+     tr.appendChild(td);
+   });
+   table.appendChild(tr);
+ }
+ container.appendChild(table);
+}
+
+function showSlot(day,idx){
+ const d=scheduleData.days.find(x=>x.name===day);if(!d)return;
+ const slot=d.slots.find(s=>s.slotIndex==idx);if(!slot)return;
+ let html='<h2>'+day+' slot '+idx+'</h2>';
+ slot.classes.forEach(cls=>{
+   const subj=(configData.subjects[cls.subject]||{}).name||cls.subject;
+   const part=cls.length>1?(' (part '+(idx-cls.start+1)+'/'+cls.length+')'):'';
+   const studs=cls.students.map(n=>'<span class="clickable student" data-id="'+n+'">'+n+'</span>').join(', ');
+   html+='<div><b>'+subj+'</b> by <span class="clickable teacher" data-id="'+cls.teacher+'">'+cls.teacher+'</span> for '+cls.size+' students in <span class="clickable cabinet" data-id="'+cls.cabinet+'">'+cls.cabinet+'</span> ('+cls.length+'h'+part+')<br>Students: '+studs+'</div>';
+ });
+ html+='<h3>Gaps</h3>Teachers: '+(slot.gaps.teachers.join(', ')||'-')+'<br>Students: '+((slot.gaps.students||[]).join(', ')||'-');
+ html+='<h3>Home</h3>Teachers: '+(slot.home.teachers.join(', ')||'-')+'<br>Students: '+((slot.home.students||[]).join(', ')||'-');
+ openModal(html);
+}
+
+function computeTeacherStats(name){
+ let sizes=[],total=0,gap=0,time=0;
+ scheduleData.days.forEach(day=>{
+   const slots=day.slots;
+   const teachSlots=slots.filter(sl=>sl.classes.some(c=>c.teacher===name));
+   if(teachSlots.length){
+     const first=teachSlots[0].slotIndex;const last=teachSlots[teachSlots.length-1].slotIndex;
+     time+=last-first+1;
+     teachSlots.forEach(sl=>{const c=sl.classes.find(x=>x.teacher===name);sizes.push(c.size);total++;});
+     for(const sl of slots){if(sl.slotIndex>=first&&sl.slotIndex<=last){if(sl.gaps.teachers.includes(name))gap++;}}
+   }
+ });
+ const avg=sizes.reduce((a,b)=>a+b,0)/(sizes.length||1);
+ return{totalClasses:total,avgSize:avg.toFixed(1),gap:gap,time:time};
+}
+
+function computeStudentStats(name){
+ let gap=0,time=0;
+ scheduleData.days.forEach(day=>{
+   const slots=day.slots;
+   const stSlots=slots.filter(sl=>sl.classes.some(c=>c.students.includes(name)));
+   if(stSlots.length){
+     const first=stSlots[0].slotIndex;const last=stSlots[stSlots.length-1].slotIndex;
+     time+=last-first+1;
+     for(const sl of slots){if(sl.slotIndex>=first&&sl.slotIndex<=last){if(sl.gaps.students.includes(name))gap++;}}
+   }
+ });
+ return{gap:gap,time:time};
+}
+
+function showTeacher(name){
+ const info=(configData.teachers||[]).find(t=>t.name===name)||{};
+ const defImp=(configData.settings.defaultTeacherImportance||[1])[0];
+ const imp=info.importance!==undefined?info.importance:defImp;
+ const stats=computeTeacherStats(name);
+ let html='<h2>Teacher: '+name+'</h2><p>Importance: '+imp+'</p>';
+ html+='<p>Total blocks: '+stats.totalClasses+', average class size: '+stats.avgSize+'</p>';
+ html+='<p>Gap hours: '+stats.gap+', time at school: '+stats.time+'</p>';
+ html+='<h3>Subjects</h3><ul>';
+ (info.subjects||[]).forEach(sid=>{const sn=(configData.subjects[sid]||{}).name||sid;html+='<li><span class="clickable subject" data-id="'+sid+'">'+sn+'</span></li>';});
+ html+='</ul><h3>Schedule</h3><ul>';
+ scheduleData.days.forEach(day=>{day.slots.forEach(sl=>{sl.classes.forEach(cls=>{if(cls.teacher===name){const sn=(configData.subjects[cls.subject]||{}).name||cls.subject;const part=cls.length>1?' (part '+(sl.slotIndex-cls.start+1)+'/'+cls.length+')':'';html+='<li>'+day.name+' slot '+sl.slotIndex+': <span class="clickable subject" data-id="'+cls.subject+'">'+sn+'</span> ('+cls.size+' st)'+part+'</li>';}});});});
+ html+='</ul>';
+ openModal(html);
+}
+
+function showStudent(name){
+ const info=(configData.students||[]).find(s=>s.name===name)||{};
+ const defImp=(configData.settings.defaultStudentImportance||[0])[0];
+ const imp=info.importance!==undefined?info.importance:defImp;
+ const stats=computeStudentStats(name);
+ let html='<h2>Student: '+name+'</h2><p>Group size: '+(studentSize[name]||1)+'</p><p>Importance: '+imp+'</p>';
+ html+='<p>Gap hours: '+stats.gap+', time at school: '+stats.time+'</p>';
+ html+='<h3>Subjects</h3><ul>';
+ (info.subjects||[]).forEach(sid=>{const sn=(configData.subjects[sid]||{}).name||sid;html+='<li><span class="clickable subject" data-id="'+sid+'">'+sn+'</span></li>';});
+ html+='</ul><h3>Schedule</h3><ul>';
+ scheduleData.days.forEach(day=>{day.slots.forEach(sl=>{sl.classes.forEach(cls=>{if(cls.students.includes(name)){const sn=(configData.subjects[cls.subject]||{}).name||cls.subject;const part=cls.length>1?' (part '+(sl.slotIndex-cls.start+1)+'/'+cls.length+')':'';html+='<li>'+day.name+' slot '+sl.slotIndex+': <span class="clickable subject" data-id="'+cls.subject+'">'+sn+'</span> with <span class="clickable teacher" data-id="'+cls.teacher+'">'+cls.teacher+'</span>'+part+'</li>';}});});});
+ html+='</ul>';
+ openModal(html);
+}
+
+function showCabinet(name){
+ const info=configData.cabinets[name]||{};
+ let html='<h2>Room: '+name+'</h2><p>Capacity: '+(info.capacity||'-')+'</p><h3>Schedule</h3><ul>';
+ scheduleData.days.forEach(day=>{day.slots.forEach(sl=>{sl.classes.forEach(cls=>{if(cls.cabinet===name){const sn=(configData.subjects[cls.subject]||{}).name||cls.subject;const part=cls.length>1?' (part '+(sl.slotIndex-cls.start+1)+'/'+cls.length+')':'';html+='<li>'+day.name+' slot '+sl.slotIndex+': <span class="clickable subject" data-id="'+cls.subject+'">'+sn+'</span> by <span class="clickable teacher" data-id="'+cls.teacher+'">'+cls.teacher+'</span> ('+cls.size+' st)'+part+'</li>';}});});});
+ html+='</ul>';
+ openModal(html);
+}
+
+function showSubject(id){
+ const subj=configData.subjects[id]||{};
+ const defOpt=(configData.settings.defaultOptimalSlot||[0])[0];
+ let html='<h2>Subject: '+(subj.name||id)+'</h2>';
+ html+='<p>Classes: '+(subj.classes||[]).join(', ')+'</p>';
+ html+='<p>Optimal slot: '+(subj.optimalSlot!==undefined?subj.optimalSlot:defOpt)+'</p>';
+ html+='<h3>Teachers</h3><ul>';
+ (configData.teachers||[]).forEach(t=>{if((t.subjects||[]).includes(id)){html+='<li><span class="clickable teacher" data-id="'+t.name+'">'+t.name+'</span></li>';}});
+ html+='</ul><h3>Students</h3><ul>';
+ (configData.students||[]).forEach(s=>{if((s.subjects||[]).includes(id)){html+='<li><span class="clickable student" data-id="'+s.name+'">'+s.name+'</span> ('+(studentSize[s.name]||1)+')</li>';}});
+ html+='</ul><h3>Schedule</h3><ul>';
+ scheduleData.days.forEach(day=>{day.slots.forEach(sl=>{sl.classes.forEach(cls=>{if(cls.subject===id){const part=cls.length>1?' (part '+(sl.slotIndex-cls.start+1)+'/'+cls.length+')':'';html+='<li>'+day.name+' slot '+sl.slotIndex+': <span class="clickable teacher" data-id="'+cls.teacher+'">'+cls.teacher+'</span> ('+cls.size+' st)'+part+'</li>';}});});});
+ html+='</ul>';
+ openModal(html);
+}
+
+document.addEventListener('click',e=>{
+ const t=e.target;
+ if(t.classList.contains('slot-info')){showSlot(t.dataset.day,parseInt(t.dataset.slot));}
+ else if(t.classList.contains('subject')){showSubject(t.dataset.id);}
+ else if(t.classList.contains('teacher')){showTeacher(t.dataset.id);}
+ else if(t.classList.contains('student')){showStudent(t.dataset.id);}
+ else if(t.classList.contains('cabinet')){showCabinet(t.dataset.id);}
+});
+
+buildTable();
+})();
+</script>
+</body>
+</html>
+"""
+    html = html.replace("__SCHEDULE__", schedule_json).replace("__CONFIG__", cfg_json)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(html)
 
 
 def main() -> None:
@@ -848,6 +1073,8 @@ def main() -> None:
 
     if show_analysis:
         report_analysis(result, cfg)
+        generate_html(result, cfg)
+        print("schedule.html generated")
 
 
 if __name__ == "__main__":

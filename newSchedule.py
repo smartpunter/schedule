@@ -61,12 +61,22 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
             students_by_subject.setdefault(sid, []).append(name)
 
     model = cp_model.CpModel()
-    penalty_val = cfg.get("penalties", {}).get("unoptimalSlot", [0])[0]
+    penalties = cfg.get("penalties", {})
+    penalty_val = penalties.get("unoptimalSlot", [0])[0]
+    gap_teacher_val = penalties.get("gapTeacher", [0])[0]
+    gap_student_val = penalties.get("gapStudent", [0])[0]
     settings = cfg.get("settings", {})
     stud_weight = settings.get("studentsPenaltyWeight", [1])[0]
+    teach_weight = settings.get("teachersPenaltyWeight", [1])[0]
+    max_teacher_slots = settings.get("maxTeacherSlots", [0])[0]
+    max_student_slots = settings.get("maxStudentSlots", [0])[0]
     default_student_imp = settings.get("defaultStudentImportance", [0])[0]
+    default_teacher_imp = settings.get("defaultTeacherImportance", [1])[0]
     student_importance = {
         s["name"]: s.get("importance", default_student_imp) for s in students
+    }
+    teacher_importance = {
+        t["name"]: t.get("importance", default_teacher_imp) for t in teachers
     }
 
     # candidate variables for each subject class
@@ -100,7 +110,10 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                                 f"x_{sid}_{idx}_{dname}_{start}_{teacher}_{cab}"
                             )
                             diff = abs(start - subj.get("optimalSlot", 0))
-                            stud_pen = sum(student_importance[s] for s in enrolled)
+                            stud_pen = sum(
+                                student_importance[s] * student_size[s]
+                                for s in enrolled
+                            )
                             cand_list.append(
                                 {
                                     "var": var,
@@ -175,6 +188,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                 if involved:
                     model.Add(sum(involved) <= 1)
 
+
             for stu in students:
                 sname = stu["name"]
                 involved = []
@@ -189,10 +203,166 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                 if involved:
                     model.Add(sum(involved) <= 1)
 
+    # build slot variables for teachers and students
+    teacher_slot = {}
+    student_slot = {}
+    for day in days:
+        dname = day["name"]
+        for slot in day["slots"]:
+            for t in teacher_names:
+                var = model.NewBoolVar(f"teach_{t}_{dname}_{slot}")
+                involved = []
+                for cand_list in candidates.values():
+                    for c in cand_list:
+                        if (
+                            c["teacher"] == t
+                            and c["day"] == dname
+                            and slot in range(c["start"], c["start"] + c["length"])
+                        ):
+                            involved.append(c["var"])
+                if involved:
+                    model.AddMaxEquality(var, involved)
+                else:
+                    model.Add(var == 0)
+                teacher_slot[(t, dname, slot)] = var
+
+            for stu in students:
+                sname = stu["name"]
+                var = model.NewBoolVar(f"stud_{sname}_{dname}_{slot}")
+                involved = []
+                for (sid, idx), cand_list in candidates.items():
+                    if sname not in students_by_subject.get(sid, []):
+                        continue
+                    for c in cand_list:
+                        if c["day"] == dname and slot in range(
+                            c["start"], c["start"] + c["length"]
+                        ):
+                            involved.append(c["var"])
+                if involved:
+                    model.AddMaxEquality(var, involved)
+                else:
+                    model.Add(var == 0)
+                student_slot[(sname, dname, slot)] = var
+
+    # prefix and suffix to detect gaps
+    teacher_gap_vars = []
+    for t in teacher_names:
+        for day in days:
+            dname = day["name"]
+            slots = day["slots"]
+            prefix = {}
+            prev = None
+            for s in slots:
+                curr = teacher_slot[(t, dname, s)]
+                if prev is None:
+                    prefix[s] = curr
+                else:
+                    pv = model.NewBoolVar(f"pref_t_{t}_{dname}_{s}")
+                    model.Add(pv >= prev)
+                    model.Add(pv >= curr)
+                    model.Add(pv <= prev + curr)
+                    prefix[s] = pv
+                prev = prefix[s]
+            suffix = {}
+            nxt = None
+            for s in reversed(slots):
+                curr = teacher_slot[(t, dname, s)]
+                if nxt is None:
+                    suffix[s] = curr
+                else:
+                    sv = model.NewBoolVar(f"suff_t_{t}_{dname}_{s}")
+                    model.Add(sv >= nxt)
+                    model.Add(sv >= curr)
+                    model.Add(sv <= nxt + curr)
+                    suffix[s] = sv
+                nxt = suffix[s]
+            for idx in range(1, len(slots) - 1):
+                s = slots[idx]
+                g = model.NewBoolVar(f"gap_t_{t}_{dname}_{s}")
+                prevp = prefix[slots[idx - 1]]
+                nextp = suffix[slots[idx + 1]]
+                cur = teacher_slot[(t, dname, s)]
+                model.Add(g <= prevp)
+                model.Add(g <= nextp)
+                model.Add(g + cur <= 1)
+                model.Add(g >= prevp + nextp - cur - 1)
+                teacher_gap_vars.append((g, t))
+            if max_teacher_slots > 0:
+                win = max_teacher_slots + 1
+                for start in range(len(slots) - win + 1):
+                    model.Add(
+                        sum(
+                            teacher_slot[(t, dname, slots[k])] for k in range(start, start + win)
+                        )
+                        <= max_teacher_slots
+                    )
+
+    student_gap_vars = []
+    for stu in students:
+        sname = stu["name"]
+        for day in days:
+            dname = day["name"]
+            slots = day["slots"]
+            prefix = {}
+            prev = None
+            for s in slots:
+                curr = student_slot[(sname, dname, s)]
+                if prev is None:
+                    prefix[s] = curr
+                else:
+                    pv = model.NewBoolVar(f"pref_s_{sname}_{dname}_{s}")
+                    model.Add(pv >= prev)
+                    model.Add(pv >= curr)
+                    model.Add(pv <= prev + curr)
+                    prefix[s] = pv
+                prev = prefix[s]
+            suffix = {}
+            nxt = None
+            for s in reversed(slots):
+                curr = student_slot[(sname, dname, s)]
+                if nxt is None:
+                    suffix[s] = curr
+                else:
+                    sv = model.NewBoolVar(f"suff_s_{sname}_{dname}_{s}")
+                    model.Add(sv >= nxt)
+                    model.Add(sv >= curr)
+                    model.Add(sv <= nxt + curr)
+                    suffix[s] = sv
+                nxt = suffix[s]
+            for idx in range(1, len(slots) - 1):
+                s = slots[idx]
+                g = model.NewBoolVar(f"gap_s_{sname}_{dname}_{s}")
+                prevp = prefix[slots[idx - 1]]
+                nextp = suffix[slots[idx + 1]]
+                cur = student_slot[(sname, dname, s)]
+                model.Add(g <= prevp)
+                model.Add(g <= nextp)
+                model.Add(g + cur <= 1)
+                model.Add(g >= prevp + nextp - cur - 1)
+                student_gap_vars.append((g, sname))
+            if max_student_slots > 0:
+                win = max_student_slots + 1
+                for start in range(len(slots) - win + 1):
+                    model.Add(
+                        sum(
+                            student_slot[(sname, dname, slots[k])] for k in range(start, start + win)
+                        )
+                        <= max_student_slots
+                    )
+
     # objective
-    model.Minimize(
-        sum(c["penalty"] * c["var"] for cand_list in candidates.values() for c in cand_list)
+    gap_teacher_expr = sum(
+        gap_teacher_val * teacher_importance[t] * teach_weight * var for var, t in teacher_gap_vars
     )
+    gap_student_expr = sum(
+        gap_student_val
+        * student_importance[s] * student_size[s] * stud_weight * var
+        for var, s in student_gap_vars
+    )
+    base_obj = sum(
+        c["penalty"] * c["var"] for cand_list in candidates.values() for c in cand_list
+    )
+    model.Minimize(base_obj + gap_teacher_expr + gap_student_expr)
 
     solver = cp_model.CpSolver()
 
@@ -231,6 +401,7 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
     teacher_names = [t["name"] for t in cfg.get("teachers", [])]
     student_names = [s["name"] for s in cfg.get("students", [])]
+    student_size = {s["name"]: int(s.get("group", 1)) for s in cfg.get("students", [])}
 
     teacher_slots = {
         t: {day["name"]: set() for day in cfg["days"]} for t in teacher_names
@@ -320,7 +491,12 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
             # gap penalties for students
             for sname in student_names:
                 if student_state[sname][dname][slot] == "gap":
-                    p = penalties_cfg.get("gapStudent", 0) * student_importance[sname] * students_w
+                    p = (
+                        penalties_cfg.get("gapStudent", 0)
+                        * student_importance[sname]
+                        * student_size.get(sname, 1)
+                        * students_w
+                    )
                     slot_penalties[dname][slot]["gapStudent"] += p
 
     # penalties for unoptimal slots, assigned at class start
@@ -337,7 +513,12 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
                     continue
                 base = penalties_cfg.get("unoptimalSlot", 0) * diff
                 for sname in cls["students"]:
-                    p = base * student_importance[sname] * students_w
+                    p = (
+                        base
+                        * student_importance[sname]
+                        * student_size.get(sname, 1)
+                        * students_w
+                    )
                     slot_penalties[dname][slot]["unoptimalSlot"] += p
 
     total_penalty = 0

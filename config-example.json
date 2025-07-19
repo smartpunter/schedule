@@ -5,8 +5,8 @@
     "showProgress": true
   },
   "settings": {
-    "defaultTeacherImportance": [1, "Default teacher importance"],
-    "defaultStudentImportance": [0, "Default student importance"],
+    "defaultTeacherImportance": [20, "Default teacher importance"],
+    "defaultStudentImportance": [10, "Default student importance"],
     "defaultOptimalSlot": [3, "Default optimal slot for subjects with unspecified optimal slot"],
     "maxTeacherSlots": [5, "Maximum amount of slots in a row, which can be assigned to teacher"],
     "maxStudentSlots": [5, "Maximum amount of slots in a row, which can be assigned to student"],
@@ -14,8 +14,8 @@
     "studentsPenaltyWeight": [1, "Multiplier for students penalties, the higher this number, the more we try to please students"]
   },
   "penalties": {
-    "gapTeacher": [10, "Penalty for having gap in teacher schedule"],
-    "gapStudent": [6, "Penalty for having gap in student schedule"],
+    "gapTeacher": [20, "Penalty for having gap in teacher schedule"],
+    "gapStudent": [12, "Penalty for having gap in student schedule"],
     "unoptimalSlot": [1, "Penalty for not having subject at optimal slot."]
   },
 

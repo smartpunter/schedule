@@ -25,6 +25,9 @@ Copy `config-example.json` to `schedule-config.json` and adjust it to match your
 - `days` – list of days and available lesson slots.
 - `cabinets` – available rooms with capacities.
 - `subjects`, `teachers`, `students` – information about who studies or teaches what.
+- `model` – solver parameters. `objective` controls optimisation strategy:
+  - `total` (default) minimises the sum of all penalties.
+  - `fair` minimises the largest individual penalty among teachers and students.
 
 ### 4. Run the scheduler
 

@@ -125,6 +125,14 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                         student_importance[s] * student_size[s]
                         for s in enrolled
                     )
+                    stud_pen_map = {
+                        s: diff
+                        * penalty_val
+                        * student_importance[s]
+                        * student_size[s]
+                        * stud_weight
+                        for s in enrolled
+                    }
                     cand_list.append(
                         {
                             "var": var,
@@ -134,7 +142,8 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                             "length": length,
                             "size": class_size,
                             "students": enrolled,
-                            "penalty": diff * penalty_val * stud_pen * stud_weight,
+                            "student_pen": stud_pen_map,
+                            "penalty": sum(stud_pen_map.values()),
                         }
                     )
             if not cand_list:
@@ -391,18 +400,59 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                     )
 
     # objective
-    gap_teacher_expr = sum(
-        gap_teacher_val * teacher_importance[t] * teach_weight * var for var, t in teacher_gap_vars
-    )
-    gap_student_expr = sum(
-        gap_student_val
-        * student_importance[s] * student_size[s] * stud_weight * var
-        for var, s in student_gap_vars
-    )
-    base_obj = sum(
-        c["penalty"] * c["var"] for cand_list in candidates.values() for c in cand_list
-    )
-    model.Minimize(base_obj + gap_teacher_expr + gap_student_expr)
+    model_params = cfg.get("model", {})
+    obj_mode = model_params.get("objective", "total")
+
+    teacher_gap_exprs = {
+        t: gap_teacher_val * teacher_importance[t] * teach_weight
+        * sum(var for var, tt in teacher_gap_vars if tt == t)
+        for t in teacher_names
+    }
+
+    student_gap_exprs = {
+        s: gap_student_val
+        * student_importance[s]
+        * student_size[s]
+        * stud_weight
+        * sum(var for var, ss in student_gap_vars if ss == s)
+        for s in student_importance
+    }
+
+    student_unopt_exprs = {
+        s: sum(
+            c["student_pen"].get(s, 0) * c["var"]
+            for cand_list in candidates.values()
+            for c in cand_list
+        )
+        for s in student_importance
+    }
+
+    if obj_mode == "total":
+        total_expr = (
+            sum(teacher_gap_exprs.values())
+            + sum(student_gap_exprs.values())
+            + sum(student_unopt_exprs.values())
+        )
+        model.Minimize(total_expr)
+    else:
+        approx_bound = (
+            sum(c["penalty"] for cl in candidates.values() for c in cl)
+            + len(teacher_gap_vars)
+            * gap_teacher_val
+            * max(teacher_importance.values() or [0])
+            * teach_weight
+            + len(student_gap_vars)
+            * gap_student_val
+            * max(student_importance.values() or [0])
+            * max(student_size.values() or [1])
+            * stud_weight
+        )
+        max_pen = model.NewIntVar(0, int(approx_bound + 1), "maxPenalty")
+        for expr in teacher_gap_exprs.values():
+            model.Add(expr <= max_pen)
+        for s in student_importance:
+            model.Add(student_gap_exprs[s] + student_unopt_exprs[s] <= max_pen)
+        model.Minimize(max_pen)
 
     solver = cp_model.CpSolver()
 

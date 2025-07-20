@@ -60,7 +60,8 @@
   "model": {
     "maxTime": 1500,
     "workers": 10,
-    "showProgress": true
+    "showProgress": true,
+    "objective": "total"
   },
   
 }

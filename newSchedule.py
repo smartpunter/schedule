@@ -854,30 +854,33 @@ def generate_html(schedule: Dict[str, Any], cfg: Dict[str, Any], path: str = "sc
 <title>Schedule</title>
 <style>
 body { font-family: Arial, sans-serif; }
-table { border-collapse: collapse; width: 100%; }
-th, td { border: 1px solid #999; padding: 4px; vertical-align: top; }
-td { display:flex; flex-direction:column; }
-th { background: #f0f0f0; }
-.class-line { display: flex; gap: 4px; }
-.class-line span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.class-line .cls-subj { flex: 0 0 45%; text-align: center; }
-.class-line .cls-part { flex: 0 0 10%; }
-.class-line .cls-teach { flex: 0 0 20%; }
-.class-line .cls-room { flex: 0 0 20%; }
-.class-line .cls-size { flex: 0 0 5%; }
+.schedule-grid { border-collapse: collapse; width: 100%; display:grid; }
+.schedule-grid .cell, .schedule-grid .header { border:1px solid #999; padding:4px; vertical-align:top; }
+.schedule-grid .cell { display:flex; flex-direction:column; }
+.schedule-grid .header { background:#f0f0f0; text-align:center; }
+.class-block { display:flex; flex-direction:column; }
+.class-line { display:flex; gap:4px; }
+.class-line span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.class-line .cls-subj { flex:1 1 60%; text-align:center; }
+.class-line .cls-part { width:3em; text-align:center; }
+.class-line .cls-room { width:4em; text-align:center; }
+.class-line .cls-teach { flex:1; text-align:center; }
+.class-line .cls-size { width:3em; text-align:center; }
 .slot-info { display:flex; gap:4px; justify-content:space-between; font-size:0.9em; color:#555; cursor:pointer; margin-top:auto; }
-.slot-info span { flex:1 1 25%; text-align:center; }
+.slot-info span { flex:1 1 20%; text-align:center; }
 .modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); }
 .modal-content { background:#fff; margin:5% auto; padding:20px; width:90%; max-height:90%; overflow:auto; }
-.close { float:right; cursor:pointer; font-size:20px; }
-.nav { float:right; cursor:pointer; font-size:20px; margin-right:8px; display:none; }
+.modal-header { position:relative; text-align:center; margin-bottom:10px; }
+.close { position:absolute; right:0; top:0; cursor:pointer; font-size:20px; }
+.nav { display:inline-flex; align-items:center; cursor:pointer; font-size:20px; margin:0 10px; }
+.nav-lbl { font-size:0.8em; color:#888; margin:0 4px; }
 .clickable { color:#0066cc; cursor:pointer; text-decoration:underline; }
 </style>
 </head>
 <body>
 <h1>Schedule Overview</h1>
-<div id="table"></div>
-<div id="modal" class="modal"><div class="modal-content"><span id="back" class="nav">&#9664;</span><span id="forward" class="nav">&#9654;</span><span id="close" class="close">&#10006;</span><div id="modal-body"></div></div></div>
+<div id="table" class="schedule-grid"></div>
+<div id="modal" class="modal"><div class="modal-content"><div class="modal-header"><span id="back" class="nav">&#9664;<span id="back-lbl" class="nav-lbl"></span></span><span id="forward" class="nav"><span id="fwd-lbl" class="nav-lbl"></span>&#9654;</span><span id="close" class="close">&#10006;</span></div><div id="modal-body"></div></div></div>
 <script>
 const scheduleData = __SCHEDULE__;
 const configData = __CONFIG__;
@@ -888,6 +891,8 @@ const modal=document.getElementById('modal');
 const close=document.getElementById('close');
 const backBtn=document.getElementById('back');
 const fwdBtn=document.getElementById('forward');
+const backLbl=document.getElementById('back-lbl');
+const fwdLbl=document.getElementById('fwd-lbl');
 const modalBody=document.getElementById('modal-body');
 close.onclick=()=>{modal.style.display='none';};
 backBtn.onclick=()=>{if(historyIndex>0){historyIndex--;renderModal();}};
@@ -897,15 +902,20 @@ const studentSize={};
 (configData.students||[]).forEach(s=>{studentSize[s.name]=s.group||1;});
 function countStudents(list){return(list||[]).reduce((a,n)=>a+(studentSize[n]||1),0);}
 let historyStack=[];
+let historyTitles=[];
 let historyIndex=-1;
+function getTitle(html){const m=html.match(/<h2[^>]*>(.*?)<\/h2>/i);return m?m[1]:'';}
 function renderModal(){
  modalBody.innerHTML=historyStack[historyIndex]||'';
  modal.style.display='block';
- backBtn.style.display=historyIndex>0?'inline':'none';
- fwdBtn.style.display=historyIndex<historyStack.length-1?'inline':'none';
+ backBtn.style.display=historyIndex>0?'inline-flex':'none';
+ fwdBtn.style.display=historyIndex<historyStack.length-1?'inline-flex':'none';
+ backLbl.textContent=historyIndex>0?historyTitles[historyIndex-1]:'';
+ fwdLbl.textContent=historyIndex<historyStack.length-1?historyTitles[historyIndex+1]:'';
 }
 function openModal(html,reset=true){
- if(reset){historyStack=[html];historyIndex=0;}else{historyStack=historyStack.slice(0,historyIndex+1);historyStack.push(html);historyIndex++;}
+ const title=getTitle(html);
+ if(reset){historyStack=[html];historyTitles=[title];historyIndex=0;}else{historyStack=historyStack.slice(0,historyIndex+1);historyTitles=historyTitles.slice(0,historyIndex+1);historyStack.push(html);historyTitles.push(title);historyIndex++;}
  renderModal();
 }
 const COLOR_MIN=[220,255,220];
@@ -914,49 +924,52 @@ const COLOR_MAX=[255,220,220];
 
 function buildTable(){
  const container=document.getElementById('table');
- const table=document.createElement('table');
- const header=document.createElement('tr');
- header.appendChild(document.createElement('th'));
- scheduleData.days.forEach(d=>{const th=document.createElement('th');th.textContent=d.name;header.appendChild(th);});
- table.appendChild(header);
+ container.style.gridTemplateColumns=`auto repeat(${scheduleData.days.length},1fr)`;
  const maxSlots=Math.max(...scheduleData.days.map(d=>d.slots.length?Math.max(...d.slots.map(s=>s.slotIndex)):0))+1;
  const cells=[];
  let minP=Infinity,maxP=-Infinity;
+ container.innerHTML='';
+ container.appendChild(document.createElement('div'));
+ scheduleData.days.forEach(d=>{const h=document.createElement('div');h.className='header';h.textContent=d.name;container.appendChild(h);});
  for(let i=0;i<maxSlots;i++){
-   const tr=document.createElement('tr');
-   const th=document.createElement('th');th.textContent='Slot '+i;tr.appendChild(th);
+   const hdr=document.createElement('div');hdr.className='header';hdr.textContent='Slot '+i;container.appendChild(hdr);
    scheduleData.days.forEach(day=>{
      const slot=day.slots.find(s=>s.slotIndex==i) || {classes:[],gaps:{students:[],teachers:[]},home:{students:[],teachers:[]},penalty:{}};
-     const td=document.createElement('td');
+     const cell=document.createElement('div');
+     cell.className='cell';
      const pVal=Object.values(slot.penalty||{}).reduce((a,b)=>a+b,0);
      minP=Math.min(minP,pVal);maxP=Math.max(maxP,pVal);
      slot.classes.forEach(cls=>{
-       const line=document.createElement('div');
-       line.className='class-line';
+       const block=document.createElement('div');
+       block.className='class-block';
        const subj=(configData.subjects[cls.subject]||{}).name||cls.subject;
        const part=(cls.length>1)?((i-cls.start+1)+'/'+cls.length):'1/1';
-      line.innerHTML='<span class="cls-subj clickable subject" data-id="'+cls.subject+'">'+subj+'</span>'+
+       const l1=document.createElement('div');
+       l1.className='class-line';
+       l1.innerHTML='<span class="cls-subj clickable subject" data-id="'+cls.subject+'">'+subj+'</span>'+
         '<span class="cls-part">'+part+'</span>'+
-        '<span class="cls-teach clickable teacher" data-id="'+cls.teacher+'">'+cls.teacher+'</span>'+
-        '<span class="cls-room clickable cabinet" data-id="'+cls.cabinet+'">'+cls.cabinet+'</span>'+
+        '<span class="cls-room clickable cabinet" data-id="'+cls.cabinet+'">'+cls.cabinet+'</span>';
+       const l2=document.createElement('div');
+       l2.className='class-line';
+       l2.innerHTML='<span class="cls-teach clickable teacher" data-id="'+cls.teacher+'">'+cls.teacher+'</span>'+
         '<span class="cls-size">'+cls.size+'</span>';
-       td.appendChild(line);
+       block.appendChild(l1);block.appendChild(l2);
+       cell.appendChild(block);
      });
      const info=document.createElement('div');
      info.className='slot-info';
      info.dataset.day=day.name;info.dataset.slot=i;
      function makeSpan(val,title){const s=document.createElement('span');s.textContent=val;s.title=title;return s;}
+     info.appendChild(makeSpan(pVal.toFixed(1),'Penalty'));
      info.appendChild(makeSpan(countStudents(slot.home.students),'Students at home: '+(slot.home.students.join(', ')||'-')));
      info.appendChild(makeSpan(slot.home.teachers.length,'Teachers at home: '+(slot.home.teachers.join(', ')||'-')));
      info.appendChild(makeSpan(countStudents(slot.gaps.students),'Students waiting for class: '+(slot.gaps.students.join(', ')||'-')));
      info.appendChild(makeSpan(slot.gaps.teachers.length,'Teachers waiting for class: '+(slot.gaps.teachers.join(', ')||'-')));
-     td.appendChild(info);
-     tr.appendChild(td);
-     cells.push({el:td,val:pVal});
+     cell.appendChild(info);
+     container.appendChild(cell);
+     cells.push({el:cell,val:pVal});
    });
-   table.appendChild(tr);
  }
- container.appendChild(table);
 
  const mid=(minP+maxP)/2;
  function mix(a,b,f){return a+(b-a)*f;}
@@ -975,7 +988,7 @@ function buildTable(){
    const b=Math.round(mix(COLOR_MID[2],COLOR_MAX[2],f));
    return `rgb(${r},${g},${b})`;
  }
- cells.forEach(c=>{c.el.style.background=colorFor(c.val);c.el.title='Penalty: '+c.val.toFixed(1);});
+ cells.forEach(c=>{c.el.style.background=colorFor(c.val);});
 }
 
 function showSlot(day,idx,fromModal=false){
@@ -986,22 +999,27 @@ function showSlot(day,idx,fromModal=false){
  slot.classes.forEach(cls=>{
    const subj=(configData.subjects[cls.subject]||{}).name||cls.subject;
    const part=(cls.length>1)?((idx-cls.start+1)+'/'+cls.length):'1/1';
-  html+='<div class="class-line">'+
-    '<span class="cls-subj clickable subject" data-id="'+cls.subject+'">'+subj+'</span>'+
-    '<span class="cls-part">'+part+'</span>'+
-    '<span class="cls-teach clickable teacher" data-id="'+cls.teacher+'">'+cls.teacher+'</span>'+
-    '<span class="cls-room clickable cabinet" data-id="'+cls.cabinet+'">'+cls.cabinet+'</span>'+
-    '<span class="cls-size">'+cls.size+'</span>'+
-    '</div>';
+   html+='<div class="class-block">'+
+     '<div class="class-line">'+
+       '<span class="cls-subj clickable subject" data-id="'+cls.subject+'">'+subj+'</span>'+
+       '<span class="cls-part">'+part+'</span>'+
+       '<span class="cls-room clickable cabinet" data-id="'+cls.cabinet+'">'+cls.cabinet+'</span>'+
+     '</div>'+
+     '<div class="class-line">'+
+       '<span class="cls-teach clickable teacher" data-id="'+cls.teacher+'">'+cls.teacher+'</span>'+
+       '<span class="cls-size">'+cls.size+'</span>'+
+     '</div>'+
+   '</div>';
    const studs=cls.students.map(n=>'<span class="clickable student" data-id="'+n+'">'+n+'</span>').join(', ');
    if(studs)html+='<div style="margin-bottom:4px">Students: '+studs+'</div>';
  });
- html+='<div class="slot-info">'+
-   '<span title="Students at home: '+(slot.home.students.join(', ')||'-')+'">'+countStudents(slot.home.students)+'</span>'+
-   '<span title="Teachers at home: '+(slot.home.teachers.join(', ')||'-')+'">'+slot.home.teachers.length+'</span>'+
-   '<span title="Students waiting for class: '+(slot.gaps.students.join(', ')||'-')+'">'+countStudents(slot.gaps.students)+'</span>'+
-   '<span title="Teachers waiting for class: '+(slot.gaps.teachers.join(', ')||'-')+'">'+slot.gaps.teachers.length+'</span>'+
-   '</div>';
+html+='<div class="slot-info">'+
+  '<span>'+total.toFixed(1)+'</span>'+
+  '<span title="Students at home: '+(slot.home.students.join(', ')||'-')+'">'+countStudents(slot.home.students)+'</span>'+
+  '<span title="Teachers at home: '+(slot.home.teachers.join(', ')||'-')+'">'+slot.home.teachers.length+'</span>'+
+  '<span title="Students waiting for class: '+(slot.gaps.students.join(', ')||'-')+'">'+countStudents(slot.gaps.students)+'</span>'+
+  '<span title="Teachers waiting for class: '+(slot.gaps.teachers.join(', ')||'-')+'">'+slot.gaps.teachers.length+'</span>'+
+  '</div>';
  openModal(html,!fromModal);
 }
 

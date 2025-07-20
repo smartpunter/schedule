@@ -868,7 +868,10 @@ body { font-family: Arial, sans-serif; }
 .schedule-grid .header { background:#f0f0f0; text-align:center; }
 .class-block { display:flex; flex-direction:column; margin-bottom:4px; }
 .class-line { display:flex; gap:4px; width:100%; }
-.class-line span { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:center; }
+.class-line span { flex:1; }
+.cls-subj { flex:0 0 50%; text-align:left; }
+.cls-room { flex:0 0 30%; text-align:right; }
+.cls-part { flex:0 0 20%; text-align:right; }
 .slot-info { display:flex; gap:4px; justify-content:space-between; font-size:0.9em; color:#555; cursor:pointer; margin-top:auto; }
 .slot-info span { flex:1 1 20%; text-align:center; }
 .modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); }
@@ -964,8 +967,8 @@ function buildTable(){
        const l1=document.createElement('div');
        l1.className='class-line';
        l1.innerHTML='<span class="cls-subj clickable subject" data-id="'+cls.subject+'">'+subj+'</span>'+
-        '<span class="cls-part">'+part+'</span>'+
-        '<span class="cls-room clickable cabinet" data-id="'+cls.cabinet+'">'+cls.cabinet+'</span>';
+        '<span class="cls-room clickable cabinet" data-id="'+cls.cabinet+'">'+cls.cabinet+'</span>' +
+        '<span class="cls-part">'+part+'</span>';
        const l2=document.createElement('div');
        l2.className='class-line';
        l2.innerHTML='<span class="cls-teach clickable teacher" data-id="'+cls.teacher+'">'+cls.teacher+'</span>'+

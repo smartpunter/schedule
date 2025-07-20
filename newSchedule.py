@@ -854,7 +854,7 @@ def generate_html(schedule: Dict[str, Any], cfg: Dict[str, Any], path: str = "sc
     """Create interactive HTML overview of the schedule."""
     schedule_json = json.dumps(schedule, ensure_ascii=False)
     cfg_json = json.dumps(cfg, ensure_ascii=False)
-    html = """
+    html = r"""
 <!DOCTYPE html>
 <html lang="en">
 <head>

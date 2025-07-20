@@ -16,13 +16,17 @@ def load_config(path: str = "schedule-config.json") -> Dict[str, Any]:
     default_teacher_imp = settings.get("defaultTeacherImportance", [1])[0]
     default_student_imp = settings.get("defaultStudentImportance", [0])[0]
     default_opt_slot = settings.get("defaultOptimalSlot", [0])[0]
+    default_teacher_arr = settings.get("defaultTeacherArriveEarly", [False])[0]
+    default_student_arr = settings.get("defaultStudentArriveEarly", [True])[0]
 
     for teacher in data.get("teachers", []):
         teacher.setdefault("importance", default_teacher_imp)
+        teacher.setdefault("arriveEarly", default_teacher_arr)
 
     for student in data.get("students", []):
         student.setdefault("importance", default_student_imp)
         student.setdefault("group", 1)
+        student.setdefault("arriveEarly", default_student_arr)
 
     for subj in data.get("subjects", {}).values():
         subj.setdefault("optimalSlot", default_opt_slot)
@@ -51,12 +55,14 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
 
     teacher_names = [t["name"] for t in teachers]
     teacher_map = {t["name"]: set(t["subjects"]) for t in teachers}
+    teacher_arrive = {t["name"]: bool(t.get("arriveEarly", False)) for t in teachers}
     subject_teachers = {
         sid: [t for t in teacher_map if sid in teacher_map[t]] for sid in subjects
     }
 
     students_by_subject: Dict[str, List[str]] = {}
     student_size: Dict[str, int] = {}
+    student_arrive = {s["name"]: bool(s.get("arriveEarly", True)) for s in students}
     for stu in students:
         name = stu["name"]
         student_size[name] = int(stu.get("group", 1))
@@ -293,45 +299,39 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
     # prefix and suffix to detect gaps
     teacher_gap_vars = []
     for t in teacher_names:
+        arrive = teacher_arrive.get(t, False)
         for day in days:
             dname = day["name"]
             slots = day["slots"]
             prefix = {}
-            prev = None
+            prev = 1 if arrive else 0
             for s in slots:
                 curr = teacher_slot[(t, dname, s)]
-                if prev is None:
-                    prefix[s] = curr
-                else:
-                    pv = model.NewBoolVar(f"pref_t_{t}_{dname}_{s}")
-                    model.Add(pv >= prev)
-                    model.Add(pv >= curr)
-                    model.Add(pv <= prev + curr)
-                    prefix[s] = pv
-                prev = prefix[s]
+                pv = model.NewBoolVar(f"pref_t_{t}_{dname}_{s}")
+                model.Add(pv >= prev)
+                model.Add(pv >= curr)
+                model.Add(pv <= prev + curr)
+                prefix[s] = pv
+                prev = pv
             suffix = {}
-            nxt = None
+            nxt = 0
             for s in reversed(slots):
                 curr = teacher_slot[(t, dname, s)]
-                if nxt is None:
-                    suffix[s] = curr
-                else:
-                    sv = model.NewBoolVar(f"suff_t_{t}_{dname}_{s}")
-                    model.Add(sv >= nxt)
-                    model.Add(sv >= curr)
-                    model.Add(sv <= nxt + curr)
-                    suffix[s] = sv
-                nxt = suffix[s]
-            for idx in range(1, len(slots) - 1):
-                s = slots[idx]
+                sv = model.NewBoolVar(f"suff_t_{t}_{dname}_{s}")
+                model.Add(sv >= nxt)
+                model.Add(sv >= curr)
+                model.Add(sv <= nxt + curr)
+                suffix[s] = sv
+                nxt = sv
+            for s in slots:
                 g = model.NewBoolVar(f"gap_t_{t}_{dname}_{s}")
-                prevp = prefix[slots[idx - 1]]
-                nextp = suffix[slots[idx + 1]]
                 cur = teacher_slot[(t, dname, s)]
-                model.Add(g <= prevp)
-                model.Add(g <= nextp)
+                p = prefix[s]
+                n = suffix[s]
+                model.Add(g <= p)
+                model.Add(g <= n)
                 model.Add(g + cur <= 1)
-                model.Add(g >= prevp + nextp - cur - 1)
+                model.Add(g >= p + n - cur - 1)
                 teacher_gap_vars.append((g, t))
             if max_teacher_slots > 0:
                 win = max_teacher_slots + 1
@@ -346,45 +346,39 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
     student_gap_vars = []
     for stu in students:
         sname = stu["name"]
+        arrive = student_arrive.get(sname, True)
         for day in days:
             dname = day["name"]
             slots = day["slots"]
             prefix = {}
-            prev = None
+            prev = 1 if arrive else 0
             for s in slots:
                 curr = student_slot[(sname, dname, s)]
-                if prev is None:
-                    prefix[s] = curr
-                else:
-                    pv = model.NewBoolVar(f"pref_s_{sname}_{dname}_{s}")
-                    model.Add(pv >= prev)
-                    model.Add(pv >= curr)
-                    model.Add(pv <= prev + curr)
-                    prefix[s] = pv
-                prev = prefix[s]
+                pv = model.NewBoolVar(f"pref_s_{sname}_{dname}_{s}")
+                model.Add(pv >= prev)
+                model.Add(pv >= curr)
+                model.Add(pv <= prev + curr)
+                prefix[s] = pv
+                prev = pv
             suffix = {}
-            nxt = None
+            nxt = 0
             for s in reversed(slots):
                 curr = student_slot[(sname, dname, s)]
-                if nxt is None:
-                    suffix[s] = curr
-                else:
-                    sv = model.NewBoolVar(f"suff_s_{sname}_{dname}_{s}")
-                    model.Add(sv >= nxt)
-                    model.Add(sv >= curr)
-                    model.Add(sv <= nxt + curr)
-                    suffix[s] = sv
-                nxt = suffix[s]
-            for idx in range(1, len(slots) - 1):
-                s = slots[idx]
+                sv = model.NewBoolVar(f"suff_s_{sname}_{dname}_{s}")
+                model.Add(sv >= nxt)
+                model.Add(sv >= curr)
+                model.Add(sv <= nxt + curr)
+                suffix[s] = sv
+                nxt = sv
+            for s in slots:
                 g = model.NewBoolVar(f"gap_s_{sname}_{dname}_{s}")
-                prevp = prefix[slots[idx - 1]]
-                nextp = suffix[slots[idx + 1]]
                 cur = student_slot[(sname, dname, s)]
-                model.Add(g <= prevp)
-                model.Add(g <= nextp)
+                p = prefix[s]
+                n = suffix[s]
+                model.Add(g <= p)
+                model.Add(g <= n)
                 model.Add(g + cur <= 1)
-                model.Add(g >= prevp + nextp - cur - 1)
+                model.Add(g >= p + n - cur - 1)
                 student_gap_vars.append((g, sname))
             if max_student_slots > 0:
                 win = max_student_slots + 1
@@ -471,6 +465,7 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
     teacher_state = {
         t: {day["name"]: {} for day in cfg["days"]} for t in teacher_names
     }
+    teach_arrive = {t["name"]: t.get("arriveEarly", settings.get("defaultTeacherArriveEarly", [False])[0]) for t in cfg.get("teachers", [])}
     for t in teacher_names:
         for day in cfg["days"]:
             name = day["name"]
@@ -479,9 +474,10 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
                 for s in day["slots"]:
                     teacher_state[t][name][s] = "home"
                 continue
-            first, last = min(slots), max(slots)
+            start = day["slots"][0] if teach_arrive.get(t, False) else min(slots)
+            last = max(slots)
             for s in day["slots"]:
-                if s < first or s > last:
+                if s < start or s > last:
                     teacher_state[t][name][s] = "home"
                 elif s in slots:
                     teacher_state[t][name][s] = "class"
@@ -491,6 +487,7 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
     student_state = {
         s: {day["name"]: {} for day in cfg["days"]} for s in student_names
     }
+    stud_arrive = {s["name"]: s.get("arriveEarly", settings.get("defaultStudentArriveEarly", [True])[0]) for s in cfg.get("students", [])}
     for st in student_names:
         for day in cfg["days"]:
             name = day["name"]
@@ -499,9 +496,10 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
                 for s in day["slots"]:
                     student_state[st][name][s] = "home"
                 continue
+            start = day["slots"][0] if stud_arrive.get(st, True) else min(slots)
             last = max(slots)
             for s in day["slots"]:
-                if s > last:
+                if s < start or s > last:
                     student_state[st][name][s] = "home"
                 elif s in slots:
                     student_state[st][name][s] = "class"
@@ -930,28 +928,40 @@ function showSlot(day,idx){
 }
 
 function computeTeacherStats(name){
+ const info=(configData.teachers||[]).find(t=>t.name===name)||{};
+ const defArr=(configData.settings.defaultTeacherArriveEarly||[false])[0];
+ const arrive=info.arriveEarly!==undefined?info.arriveEarly:defArr;
  let sizes=[],total=0,gap=0,time=0;
  scheduleData.days.forEach(day=>{
    const slots=day.slots;
+   const dayStart=slots.length?slots[0].slotIndex:0;
    const teachSlots=slots.filter(sl=>sl.classes.some(c=>c.teacher===name));
    if(teachSlots.length){
-     const first=teachSlots[0].slotIndex;const last=teachSlots[teachSlots.length-1].slotIndex;
+     const firstClass=teachSlots[0].slotIndex;
+     const first=arrive?dayStart:firstClass;
+     const last=teachSlots[teachSlots.length-1].slotIndex;
      time+=last-first+1;
      teachSlots.forEach(sl=>{const c=sl.classes.find(x=>x.teacher===name);sizes.push(c.size);total++;});
      for(const sl of slots){if(sl.slotIndex>=first&&sl.slotIndex<=last){if(sl.gaps.teachers.includes(name))gap++;}}
    }
- });
+  });
  const avg=sizes.reduce((a,b)=>a+b,0)/(sizes.length||1);
  return{totalClasses:total,avgSize:avg.toFixed(1),gap:gap,time:time};
 }
 
 function computeStudentStats(name){
+ const info=(configData.students||[]).find(s=>s.name===name)||{};
+ const defArr=(configData.settings.defaultStudentArriveEarly||[true])[0];
+ const arrive=info.arriveEarly!==undefined?info.arriveEarly:defArr;
  let gap=0,time=0;
  scheduleData.days.forEach(day=>{
    const slots=day.slots;
+   const dayStart=slots.length?slots[0].slotIndex:0;
    const stSlots=slots.filter(sl=>sl.classes.some(c=>c.students.includes(name)));
    if(stSlots.length){
-     const first=stSlots[0].slotIndex;const last=stSlots[stSlots.length-1].slotIndex;
+     const firstClass=stSlots[0].slotIndex;
+     const first=arrive?dayStart:firstClass;
+     const last=stSlots[stSlots.length-1].slotIndex;
      time+=last-first+1;
      for(const sl of slots){if(sl.slotIndex>=first&&sl.slotIndex<=last){if(sl.gaps.students.includes(name))gap++;}}
    }

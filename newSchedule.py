@@ -859,7 +859,7 @@ def generate_html(schedule: Dict[str, Any], cfg: Dict[str, Any], path: str = "sc
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Schedule</title>
+<title>Schedule Overview</title>
 <style>
 body { font-family: Arial, sans-serif; }
 .schedule-grid { border-collapse: collapse; width: 100%; display:grid; }
@@ -897,33 +897,33 @@ body { font-family: Arial, sans-serif; }
 .info-table td.num{text-align:right;}
 /* overview tables below the schedule */
 .overview-section{margin-top:20px;}
-.overview-table{border:1px solid #999;border-collapse:collapse;width:100%;}
+.overview-table{border:1px solid #999;border-collapse:collapse;width:70%;margin:0 auto;}
 .overview-header,.overview-row{display:flex;align-items:center;}
-.overview-header span,.overview-row span{padding:4px;border-right:1px solid #999;flex:1;text-align:center;}
+.overview-header span,.overview-row span{border-right:1px solid #999;text-align:center;}
 .overview-header span:last-child,.overview-row span:last-child{border-right:none;}
 .overview-row{border-top:1px solid #999;}
 .overview-row:first-child{border-top:none;}
 .overview-header{background:#f0f0f0;font-weight:bold;}
-.person-name{flex:0 0 14%;text-align:left;}
-.person-info{flex:0 0 12%;}
-.person-pen{flex:0 0 8%;text-align:right;}
-.person-hours{flex:0 0 8%;text-align:right;}
-.person-time{flex:0 0 8%;text-align:right;}
-.person-subjects{flex:0 0 50%;text-align:left;padding:0;}
+.person-name{flex:0 0 25%;text-align:left;}
+.person-info{flex:0 0 6%;text-align:center;}
+.person-pen{flex:0 0 6%;text-align:center;}
+.person-hours{flex:0 0 6%;text-align:center;}
+.person-time{flex:0 0 6%;text-align:center;}
+.person-subjects{flex:0 0 51%;text-align:left;padding:0;}
 .subject-list{display:flex;flex-direction:column;}
 .subject-line{display:flex;gap:6px;border-top:1px solid #ddd;padding:2px 4px;}
 .subject-line:first-child{border-top:none;}
 .subject-name{flex:0 0 60%;text-align:left;}
-.subject-count{flex:0 0 20%;text-align:right;}
-.subject-extra{flex:0 0 20%;text-align:right;}
+.subject-count{flex:0 0 20%;text-align:center;}
+.subject-extra{flex:0 0 20%;text-align:center;}
 </style>
 </head>
 <body>
 <h1>Schedule Overview</h1>
 <div id="table" class="schedule-grid"></div>
-<h2 class="overview-section">Teachers</h2>
+<h2 class="overview-section">Teachers Overview</h2>
 <div id="teachers" class="overview-table"></div>
-<h2 class="overview-section">Students</h2>
+<h2 class="overview-section">Students Overview</h2>
 <div id="students" class="overview-table"></div>
 <div id="modal" class="modal"><div class="modal-content"><div class="modal-header"><span id="back" class="nav">&#9664;<span id="back-lbl" class="nav-lbl"></span></span><span id="forward" class="nav"><span id="fwd-lbl" class="nav-lbl"></span>&#9654;</span><span id="close" class="close">&#10006;</span></div><div id="modal-body"></div></div></div>
 <script>

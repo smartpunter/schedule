@@ -1,9 +1,4 @@
 {
-  "model": {
-    "maxTime": 300,
-    "workers": 10,
-    "showProgress": true
-  },
   "settings": {
     "defaultTeacherImportance": [20, "Default teacher importance"],
     "defaultStudentImportance": [10, "Default student importance"],
@@ -11,55 +6,61 @@
     "defaultTeacherArriveEarly": [false, "Whether a teacher should appear early on morning"],
     "defaultStudentArriveEarly": [true, "Whether a student should appear early on morning"],
     "maxTeacherSlots": [6, "Maximum amount of slots in a row, which can be assigned to teacher"],
-    "maxStudentSlots": [5, "Maximum amount of slots in a row, which can be assigned to student"],
+    "maxStudentSlots": [6, "Maximum amount of slots in a row, which can be assigned to student"],
     "teachersPenaltyWeight": [1, "Multiplier for teachers penalties, the higher this number, the more we try to please teachers"],
     "studentsPenaltyWeight": [1, "Multiplier for students penalties, the higher this number, the more we try to please students"]
   },
   "penalties": {
-    "gapTeacher": [5, "Penalty for having gap in teacher schedule"],
-    "gapStudent": [15, "Penalty for having gap in student schedule"],
+    "gapTeacher": [2, "Penalty for having gap in teacher schedule"],
+    "gapStudent": [10, "Penalty for having gap in student schedule"],
     "unoptimalSlot": [1, "Penalty for not having subject at optimal slot."]
   },
 
   "days": [
-    { "name": "Monday",    "slots": [0, 1, 2, 3, 4, 5, 6, 7] },
-    { "name": "Tuesday",   "slots": [0, 1, 2, 3, 4, 5, 6, 7] },
-    { "name": "Wednesday", "slots": [0, 1, 2, 3, 4, 5, 6, 7] },
+    { "name": "Monday",    "slots": [0, 1, 2, 3, 4, 5, 6 ] },
+    { "name": "Tuesday",   "slots": [0, 1, 2, 3, 4, 5, 6, 7 ] },
+    { "name": "Wednesday", "slots": [0, 1, 2, 3, 4, 5, 6, 7 ] },
     { "name": "Thursday",  "slots": [0, 1, 2, 3, 4, 5, 6   ] },
-    { "name": "Friday",    "slots": [0, 1, 2, 3, 4, 5      ] }
+    { "name": "Friday",    "slots": [0, 1, 2, 3, 4, 5, 6   ] }
   ],
 
   "cabinets": {
     "Room #001": { "capacity": 20 },
     "Room #002": { "capacity": 20 },
-    "Room #011": { "capacity": 10 },
-    "Room #012": { "capacity": 5  }
+    "Room #003": { "capacity": 10 },
+    "Room #004": { "capacity": 5  }
   },
 
   "subjects": {
-    "DP1_English_Literature_SL": { "classes": [2, 1],          "cabinets": ["Room #001"] },
-    "DP2_Mathematics_HL":        { "optimalSlot": 0, "classes": [2, 2, 1]                },
-    "DP2_Business_HL":           { "classes": [2, 1]                                     },
-    "Y11_English_Literature":    { "classes": [2, 1],          "cabinets": ["Room #001"] },
-    "Y11_Mathematics":           { "optimalSlot": 0, "classes": [2, 1, 1]                },
-    "Y11_History":               { "optimalSlot": 5, "classes": [2, 1]                   },
-    "Y11_Geography":             { "optimalSlot": 2, "classes": [2]                      }
+    "DP1_English_Literature_SL": { "classes": [2, 1], "cabinets": ["Room #001", "Room #002"], "optimalSlot": 4, "comment": "Literary analysis benefits from stabilized verbal processing later in the day." },
+    "DP1_English_Literature_HL": { "classes": [2, 2, 1], "optimalSlot": 4, "comment": "Extended essay work and close reading profit from early‑afternoon linguistic focus." },
+
+    "DP1_Mathematics_SL": { "classes": [2, 1], "optimalSlot": 0, "comment": "Problem‑solving is strongest first period when working‑memory and alertness are freshest." },
+    "DP1_Mathematics_HL": { "classes": [2, 2, 1], "optimalSlot": 0, "comment": "Higher‑level math needs peak cognitive resources available right at the start of the day." },
+
+    "DP1_Chemistry_SL": { "classes": [2, 1], "optimalSlot": 1, "comment": "Hands‑on labs benefit from high alertness that persists through the second morning slot." },
+    "DP1_Chemistry_HL": { "classes": [2], "optimalSlot": 1, "comment": "Advanced chemistry calculations need strong focus still available early in the day." },
   },
 
   "teachers": [
-    { "importance": 2, "name": "Nicole", "subjects": ["DP1_English_Literature_SL", "Y11_English_Literature"], "importance": 2 },
-    { "arriveEarly": true, "name": "Nick",   "subjects": ["DP2_Mathematics_HL", "Y11_Mathematics"] },
-    { "name": "David",  "subjects": ["Y11_History"] },
-    { "name": "Ana",    "subjects": ["Y11_Geography"] },
-    { "name": "Olga",   "subjects": ["DP2_Business_HL"] }
+    { "importance": 50, "arriveEarly": true, "name": "Marie", "subjects": [ "DP1_English_Literature_SL", "DP1_English_Literature_HL" ] },
+    { "name": "Alex", "subjects": [ "DP1_Mathematics_SL", "DP1_Mathematics_HL" ] },
+    { "name": "Olga", "subjects": [ "DP1_Chemistry_SL", "DP1_Chemistry_HL" ] },
   ],
 
   "students": [
-    { "name": "Mike",      "subjects": ["DP1_English_Literature_SL", "DP2_Mathematics_HL"] },
-    { "name": "Aleksander", "subjects": ["DP1_English_Literature_SL"] },
-    { "arriveEarly": false, "name": "Ekaterina",  "subjects": ["DP2_Mathematics_HL", "DP2_Business_HL"] },
-    { "importance": 3, "name": "Daniil", "subjects": ["DP2_Mathematics_HL"] },
-    { "group": 10, "name": "Y11_Students_French",
-      "subjects": ["Y11_English_Literature", "Y11_Mathematics", "Y11_History", "Y11_Geography" ] }
-  ]
+    { "name": "Mike",      "subjects": ["DP1_English_Literature_SL", "DP1_Mathematics_HL"] },
+    { "name": "Aleksander", "subjects": ["DP1_English_Literature_SL", "DP1_Mathematics_SL"] },
+    { "arriveEarly": false, "name": "Ekaterina",  "subjects": ["DP1_Mathematics_HL", "DP1_Chemistry_SL"] },
+    { "importance": 30, "name": "John", "subjects": ["DP1_Mathematics_HL", "DP1_Chemistry_HL"] },
+    { "group": 10, "name": "Other students",
+      "subjects": ["DP1_English_Literature_SL", "DP1_Mathematics_SL", "DP1_Chemistry_SL" ] }
+  ],
+
+  "model": {
+    "maxTime": 1500,
+    "workers": 10,
+    "showProgress": true
+  },
+  
 }

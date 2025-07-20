@@ -881,13 +881,20 @@ body { font-family: Arial, sans-serif; }
 .nav { display:inline-flex; align-items:center; cursor:pointer; font-size:20px; margin:0 10px; }
 .nav-lbl { font-size:0.8em; color:#888; margin:0 4px; }
 .clickable { color:#0066cc; cursor:pointer; text-decoration:underline; }
-.slot-detail .class-row{display:flex;gap:6px;border-top:1px solid #ccc;padding:2px 0;}
-.slot-detail .class-row:first-child{border-top:none;}
+.slot-detail .slot-class{border-top:1px solid #ddd;padding:2px 0;}
+.slot-detail .slot-class:first-child{border-top:none;}
+.detail-line{display:flex;gap:6px;}
+.detail-line span{flex:1;}
+.detail-subj{flex:0 0 40%;text-align:left;}
+.detail-teacher{flex:0 0 20%;text-align:left;}
+.detail-room{flex:0 0 15%;text-align:right;}
+.detail-size{flex:0 0 10%;text-align:right;}
+.detail-part{flex:0 0 15%;text-align:right;}
+.detail-students{font-size:0.9em;margin-left:1em;}
 .info-table{border-collapse:collapse;width:100%;margin-top:6px;}
 .info-table th,.info-table td{border:1px solid #999;padding:4px;vertical-align:top;}
 .info-table th{background:#f0f0f0;}
 .info-table td.num{text-align:right;}
-.slot-detail hr{border:0;border-top:1px dashed #ccc;margin:4px 0;}
 </style>
 </head>
 <body>
@@ -1018,40 +1025,43 @@ function showSlot(day,idx,fromModal=false){
  const total=Object.values(slot.penalty||{}).reduce((a,b)=>a+b,0);
  let html='<h2>'+day+' slot '+idx+'</h2><p>Total penalty: '+total.toFixed(1)+'</p>';
  html+='<div class="slot-detail">';
- slot.classes.forEach((cls,i)=>{
+ slot.classes.forEach((cls)=>{
    const subj=(configData.subjects[cls.subject]||{}).name||cls.subject;
    const part=(cls.length>1)?((idx-cls.start+1)+'/'+cls.length):'1/1';
-   html+='<div class="class-row">'+
-     '<span class="cls-subj clickable subject" data-id="'+cls.subject+'">'+subj+'</span>'+
-     '<span class="cls-teach clickable teacher" data-id="'+cls.teacher+'">'+cls.teacher+'</span>'+
-     '<span class="cls-room clickable cabinet" data-id="'+cls.cabinet+'">'+cls.cabinet+'</span>'+
-     '<span class="cls-size">'+cls.size+'</span>'+
-     '<span class="cls-part">'+part+'</span>'+
-   '</div>';
+   html+='<div class="slot-class">'+
+     '<div class="detail-line">'+
+       '<span class="detail-subj clickable subject" data-id="'+cls.subject+'">'+subj+'</span>'+
+       '<span class="detail-teacher clickable teacher" data-id="'+cls.teacher+'">'+cls.teacher+'</span>'+
+       '<span class="detail-room clickable cabinet" data-id="'+cls.cabinet+'">'+cls.cabinet+'</span>'+
+       '<span class="detail-size">'+cls.size+'</span>'+
+       '<span class="detail-part">'+part+'</span>'+
+     '</div>';
    const studs=cls.students.map(n=>personLink(n)).join(', ');
-   if(studs)html+='<div class="class-row">Students: '+studs+'</div>';
-   if(i<slot.classes.length-1)html+='<hr/>';
+   if(studs)html+='<div class="detail-students">'+studs+'</div>';
+   html+='</div>';
  });
  html+='</div>';
- const homeStu=slot.home.students.map(n=>personLink(n)).join('<br>');
- const homeTeach=slot.home.teachers.map(n=>personLink(n)).join('<br>');
- const waitStu=slot.gaps.students.map(n=>personLink(n)).join('<br>');
- const waitTeach=slot.gaps.teachers.map(n=>personLink(n)).join('<br>');
+ const homeStu=slot.home.students.map(n=>personLink(n)).join(', ');
+ const homeTeach=slot.home.teachers.map(n=>personLink(n)).join(', ');
+ const waitStu=slot.gaps.students.map(n=>personLink(n)).join(', ');
+ const waitTeach=slot.gaps.teachers.map(n=>personLink(n)).join(', ');
  html+='<h3>Presence</h3>';
  html+='<table class="info-table"><tr><th></th><th>Students</th><th>Teachers</th></tr>'+
   '<tr><td>At home</td><td>'+ (homeStu||'-') +'</td><td>'+ (homeTeach||'-') +'</td></tr>'+
   '<tr><td>Waiting</td><td>'+ (waitStu||'-') +'</td><td>'+ (waitTeach||'-') +'</td></tr>'+
   '</table>';
  const penGrouped={};
- (slot.penaltyDetails||[]).forEach(p=>{(penGrouped[p.type]=penGrouped[p.type]||[]).push(p);});
+ (slot.penaltyDetails||[]).filter(p=>p.amount>0).forEach(p=>{(penGrouped[p.type]=penGrouped[p.type]||[]).push(p);});
  const types=Object.keys(penGrouped);
  if(types.length){
    html+='<h3>Penalties</h3><table class="info-table"><tr><th>Type</th><th>Amount</th><th>Who</th></tr>';
    types.forEach(t=>{
      const list=penGrouped[t];
-     const amount=list.reduce((a,x)=>a+x.amount,0).toFixed(1);
-     const names=list.map(p=>personLink(p.name)+' ('+p.amount.toFixed(1)+')').join(', ');
-     html+='<tr><td>'+t+'</td><td class="num">'+amount+'</td><td>'+names+'</td></tr>';
+     const amount=list.reduce((a,x)=>a+x.amount,0);
+     if(amount>0){
+       const names=list.map(p=>personLink(p.name)+' ('+p.amount.toFixed(1)+')').join(', ');
+       html+='<tr><td>'+t+'</td><td class="num">'+amount.toFixed(1)+'</td><td>'+names+'</td></tr>';
+     }
    });
    html+='</table>';
  }

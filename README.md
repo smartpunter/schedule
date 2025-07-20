@@ -1,71 +1,60 @@
-# Schedule Generator
+# School Schedule Optimizer
 
-This repository contains two scripts for experimenting with generating class schedules using [Google OR‑Tools](https://developers.google.com/optimization/).
+`newSchedule.py` generates an optimal timetable using [Google OR‑Tools](https://developers.google.com/optimization/). The script reads a JSON configuration that describes rooms, teachers, students and subjects, then tries to create the best possible schedule.
 
-* **`mock.py`** – builds a sample configuration JSON with fake teachers, subjects and students using the `Faker` library.
-* **`solver.py`** – reads a configuration file and computes an optimal allocation of classes to blocks.
+## Quick start
 
-## Requirements
+### 1. Install Python
 
-Install the minimal dependencies with:
+Download and install **Python 3** from [python.org](https://www.python.org/downloads/) if it is not already available. During installation on Windows check the option *Add Python to PATH*.
 
-```bash
-pip install ortools Faker
-```
+### 2. Install the required package
 
-## Generating Example Data
-
-Run the mock data generator to produce a configuration file:
+Open **Terminal** on macOS or **Command Prompt** on Windows and install the solver library:
 
 ```bash
-python mock.py
+pip install ortools
 ```
 
-A file called `mock_data.json` will be created in the repository directory.
+### 3. Prepare a configuration file
 
-## Running the Solver
+Copy `config-example.json` to `schedule-config.json` and adjust it to match your school. The example shows the structure but is intentionally incomplete. Important blocks are:
 
-Run the solver with the configuration JSON:
+- `settings` – global parameters such as allowed consecutive lessons.
+- `penalties` – weights used when evaluating schedule quality.
+- `days` – list of days and available lesson slots.
+- `cabinets` – available rooms with capacities.
+- `subjects`, `teachers`, `students` – information about who studies or teaches what.
+
+### 4. Run the scheduler
+
+Execute the script and pass the configuration path. The second argument is where to store the result:
 
 ```bash
-python solver.py mock_data.json
+python newSchedule.py schedule-config.json schedule.json
 ```
 
-The schedule will be written to `schedule.json`. It contains an array of blocks. Each block is an array of objects describing a class with the following fields:
+After solving, `schedule.json` contains the raw schedule. An interactive HTML view `schedule.html` is also generated so you can browse the timetable in a browser.
 
-- `subject` – subject identifier
-- `teacher` – teacher identifier
-- `students` – list of student IDs attending that class
+## Using the results
 
-## Configuration Format
+- **schedule.json** – structured data that can be post‑processed or imported elsewhere.
+- **schedule.html** – open this file in your browser to inspect the timetable. It highlights teachers, students and empty slots.
+- The console output provides a textual summary and optional analysis of teachers, students and subjects.
 
-A configuration JSON consists of four top‑level keys: `limits`, `teachers`, `subjects` and `students`. Below is a small example illustrating the structure:
+## Development notes
 
-```json
-{
-  "limits": {
-    "MAX_CLASSES_PER_BLOCK": 10,
-    "MAX_STUDENTS_PER_CLASS": 15,
-    "MIN_STUDENTS_PER_CLASS": 1,
-    "MAX_BLOCKS": 40
-  },
-  "teachers": {
-    "teacher_a": {"name": "Alice"}
-  },
-  "subjects": {
-    "math_DP1": {
-      "name": "Math DP1",
-      "hours": 5,
-      "teachers": ["teacher_a"]
-    }
-  },
-  "students": {
-    "student_1": {
-      "name": "Bob",
-      "subjects": ["math_DP1"]
-    }
-  }
-}
-```
+The optimizer was created iteratively while exploring OR‑Tools capabilities. The configuration format was designed to be flexible, allowing arbitrary sets of days, rooms and lesson lengths. `newSchedule.py` also generates human‑readable reports to help understand the computed schedule.
 
-`mock.py` generates a much larger file with the same shape. You can edit any field or create your own configuration following this format.
+**Strengths**
+
+- Flexible JSON configuration with sensible defaults.
+- Produces both machine‑readable and visual outputs.
+- Includes analysis tables for teachers, students and subjects.
+
+**Weaknesses**
+
+- Configuration file is quite verbose and requires careful preparation.
+- Only lightly tested and may perform slowly on very large data sets.
+- The example configuration is intentionally incomplete and must be edited before use.
+

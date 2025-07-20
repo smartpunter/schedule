@@ -848,7 +848,10 @@ body { font-family: Arial, sans-serif; }
 table { border-collapse: collapse; width: 100%; }
 th, td { border: 1px solid #999; padding: 4px; vertical-align: top; }
 th { background: #f0f0f0; }
-.slot-info { font-size: 0.9em; color: #555; margin-top: 2px; }
+.class-line { display: flex; gap: 4px; }
+.class-line span { flex: 1 1 20%; }
+.slot-info { display:flex; gap:4px; justify-content:space-between; font-size:0.9em; color:#555; margin-top:2px; cursor:pointer; }
+.slot-info span { flex:1 1 25%; text-align:center; }
 .modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); }
 .modal-content { background:#fff; margin:5% auto; padding:20px; width:90%; max-height:90%; overflow:auto; }
 .close { float:right; cursor:pointer; font-size:20px; }
@@ -874,6 +877,9 @@ const studentSize={};
 (configData.students||[]).forEach(s=>{studentSize[s.name]=s.group||1;});
 function countStudents(list){return(list||[]).reduce((a,n)=>a+(studentSize[n]||1),0);}
 function openModal(html){modalBody.innerHTML=html;modal.style.display='block';}
+const COLOR_MIN=[220,255,220];
+const COLOR_MID=[255,255,255];
+const COLOR_MAX=[255,220,220];
 
 function buildTable(){
  const container=document.getElementById('table');
@@ -883,47 +889,88 @@ function buildTable(){
  scheduleData.days.forEach(d=>{const th=document.createElement('th');th.textContent=d.name;header.appendChild(th);});
  table.appendChild(header);
  const maxSlots=Math.max(...scheduleData.days.map(d=>d.slots.length?Math.max(...d.slots.map(s=>s.slotIndex)):0))+1;
+ const cells=[];
+ let minP=Infinity,maxP=-Infinity;
  for(let i=0;i<maxSlots;i++){
    const tr=document.createElement('tr');
    const th=document.createElement('th');th.textContent='Slot '+i;tr.appendChild(th);
    scheduleData.days.forEach(day=>{
-     const slot=day.slots.find(s=>s.slotIndex==i) || {classes:[],gaps:{students:[],teachers:[]},home:{students:[],teachers:[]}};
+     const slot=day.slots.find(s=>s.slotIndex==i) || {classes:[],gaps:{students:[],teachers:[]},home:{students:[],teachers:[]},penalty:{}};
      const td=document.createElement('td');
+     const pVal=Object.values(slot.penalty||{}).reduce((a,b)=>a+b,0);
+     minP=Math.min(minP,pVal);maxP=Math.max(maxP,pVal);
      slot.classes.forEach(cls=>{
-       const div=document.createElement('div');
+       const line=document.createElement('div');
+       line.className='class-line';
        const subj=(configData.subjects[cls.subject]||{}).name||cls.subject;
-       const part=cls.length>1?(' ('+(i-cls.start+1)+'/'+cls.length+')'):'';
-       div.innerHTML='<span class="clickable subject" data-id="'+cls.subject+'">'+subj+'</span> by <span class="clickable teacher" data-id="'+cls.teacher+'">'+cls.teacher+'</span> ('+cls.size+' st, <span class="clickable cabinet" data-id="'+cls.cabinet+'">'+cls.cabinet+'</span>, '+cls.length+'h'+part+')';
-       td.appendChild(div);
+       const part=(cls.length>1)?((i-cls.start+1)+'/'+cls.length):'1/1';
+       line.innerHTML='<span class="clickable subject" data-id="'+cls.subject+'">'+subj+'</span>'+
+         '<span>'+part+'</span>'+
+         '<span class="clickable teacher" data-id="'+cls.teacher+'">'+cls.teacher+'</span>'+
+         '<span class="clickable cabinet" data-id="'+cls.cabinet+'">'+cls.cabinet+'</span>'+
+         '<span>'+cls.size+'</span>';
+       td.appendChild(line);
      });
      const info=document.createElement('div');
-     info.className='slot-info clickable';
+     info.className='slot-info';
      info.dataset.day=day.name;info.dataset.slot=i;
-     const gapT=slot.gaps.teachers.length;
-     const gapS=countStudents(slot.gaps.students);
-     const homeT=slot.home.teachers.length;
-     const homeS=countStudents(slot.home.students);
-     info.textContent='gap T'+gapT+' S'+gapS+' home T'+homeT+' S'+homeS;
+     function makeSpan(val,title){const s=document.createElement('span');s.textContent=val;s.title=title;return s;}
+     info.appendChild(makeSpan(countStudents(slot.home.students),'Students at home: '+(slot.home.students.join(', ')||'-')));
+     info.appendChild(makeSpan(slot.home.teachers.length,'Teachers at home: '+(slot.home.teachers.join(', ')||'-')));
+     info.appendChild(makeSpan(countStudents(slot.gaps.students),'Students waiting for class: '+(slot.gaps.students.join(', ')||'-')));
+     info.appendChild(makeSpan(slot.gaps.teachers.length,'Teachers waiting for class: '+(slot.gaps.teachers.join(', ')||'-')));
      td.appendChild(info);
      tr.appendChild(td);
+     cells.push({el:td,val:pVal});
    });
    table.appendChild(tr);
  }
  container.appendChild(table);
+
+ const mid=(minP+maxP)/2;
+ function mix(a,b,f){return a+(b-a)*f;}
+ function colorFor(v){
+   if(maxP===minP)return `rgb(${COLOR_MID.join(',')})`;
+   if(v<=mid){
+     const f=(v-minP)/(mid-minP||1);
+     const r=Math.round(mix(COLOR_MIN[0],COLOR_MID[0],f));
+     const g=Math.round(mix(COLOR_MIN[1],COLOR_MID[1],f));
+     const b=Math.round(mix(COLOR_MIN[2],COLOR_MID[2],f));
+     return `rgb(${r},${g},${b})`;
+   }
+   const f=(v-mid)/(maxP-mid||1);
+   const r=Math.round(mix(COLOR_MID[0],COLOR_MAX[0],f));
+   const g=Math.round(mix(COLOR_MID[1],COLOR_MAX[1],f));
+   const b=Math.round(mix(COLOR_MID[2],COLOR_MAX[2],f));
+   return `rgb(${r},${g},${b})`;
+ }
+ cells.forEach(c=>{c.el.style.background=colorFor(c.val);c.el.title='Penalty: '+c.val.toFixed(1);});
 }
 
 function showSlot(day,idx){
  const d=scheduleData.days.find(x=>x.name===day);if(!d)return;
  const slot=d.slots.find(s=>s.slotIndex==idx);if(!slot)return;
- let html='<h2>'+day+' slot '+idx+'</h2>';
+ const total=Object.values(slot.penalty||{}).reduce((a,b)=>a+b,0);
+ let html='<h2>'+day+' slot '+idx+'</h2><p>Total penalty: '+total.toFixed(1)+'</p>';
  slot.classes.forEach(cls=>{
    const subj=(configData.subjects[cls.subject]||{}).name||cls.subject;
-   const part=cls.length>1?(' (part '+(idx-cls.start+1)+'/'+cls.length+')'):'';
+   const part=(cls.length>1)?((idx-cls.start+1)+'/'+cls.length):'1/1';
+   html+='<div class="class-line">'+
+     '<span class="clickable subject" data-id="'+cls.subject+'">'+subj+'</span>'+
+     '<span>'+part+'</span>'+
+     '<span class="clickable teacher" data-id="'+cls.teacher+'">'+cls.teacher+'</span>'+
+     '<span class="clickable cabinet" data-id="'+cls.cabinet+'">'+cls.cabinet+'</span>'+
+     '<span>'+cls.size+'</span>'+
+     '</div>';
    const studs=cls.students.map(n=>'<span class="clickable student" data-id="'+n+'">'+n+'</span>').join(', ');
-   html+='<div><b>'+subj+'</b> by <span class="clickable teacher" data-id="'+cls.teacher+'">'+cls.teacher+'</span> for '+cls.size+' students in <span class="clickable cabinet" data-id="'+cls.cabinet+'">'+cls.cabinet+'</span> ('+cls.length+'h'+part+')<br>Students: '+studs+'</div>';
+   if(studs)html+='<div style="margin-bottom:4px">Students: '+studs+'</div>';
  });
- html+='<h3>Gaps</h3>Teachers: '+(slot.gaps.teachers.join(', ')||'-')+'<br>Students: '+((slot.gaps.students||[]).join(', ')||'-');
- html+='<h3>Home</h3>Teachers: '+(slot.home.teachers.join(', ')||'-')+'<br>Students: '+((slot.home.students||[]).join(', ')||'-');
+ html+='<div class="slot-info" style="margin-top:6px">'+
+   '<span title="Students at home: '+(slot.home.students.join(', ')||'-')+'">'+countStudents(slot.home.students)+'</span>'+
+   '<span title="Teachers at home: '+(slot.home.teachers.join(', ')||'-')+'">'+slot.home.teachers.length+'</span>'+
+   '<span title="Students waiting for class: '+(slot.gaps.students.join(', ')||'-')+'">'+countStudents(slot.gaps.students)+'</span>'+
+   '<span title="Teachers waiting for class: '+(slot.gaps.teachers.join(', ')||'-')+'">'+slot.gaps.teachers.length+'</span>'+
+   '</div>';
  openModal(html);
 }
 
@@ -1025,9 +1072,10 @@ function showSubject(id){
 }
 
 document.addEventListener('click',e=>{
+ const slotElem=e.target.closest('.slot-info');
+ if(slotElem){showSlot(slotElem.dataset.day,parseInt(slotElem.dataset.slot));return;}
  const t=e.target;
- if(t.classList.contains('slot-info')){showSlot(t.dataset.day,parseInt(t.dataset.slot));}
- else if(t.classList.contains('subject')){showSubject(t.dataset.id);}
+ if(t.classList.contains('subject')){showSubject(t.dataset.id);}
  else if(t.classList.contains('teacher')){showTeacher(t.dataset.id);}
  else if(t.classList.contains('student')){showStudent(t.dataset.id);}
  else if(t.classList.contains('cabinet')){showCabinet(t.dataset.id);}

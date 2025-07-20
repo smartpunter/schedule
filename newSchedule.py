@@ -878,6 +878,13 @@ body { font-family: Arial, sans-serif; }
 .nav { display:inline-flex; align-items:center; cursor:pointer; font-size:20px; margin:0 10px; }
 .nav-lbl { font-size:0.8em; color:#888; margin:0 4px; }
 .clickable { color:#0066cc; cursor:pointer; text-decoration:underline; }
+.slot-detail .class-row{display:flex;gap:6px;border-top:1px solid #ccc;padding:2px 0;}
+.slot-detail .class-row:first-child{border-top:none;}
+.info-table{border-collapse:collapse;width:100%;margin-top:6px;}
+.info-table th,.info-table td{border:1px solid #999;padding:4px;vertical-align:top;}
+.info-table th{background:#f0f0f0;}
+.info-table td.num{text-align:right;}
+.slot-detail hr{border:0;border-top:1px dashed #ccc;margin:4px 0;}
 </style>
 </head>
 <body>
@@ -903,6 +910,13 @@ fwdBtn.onclick=()=>{if(historyIndex<historyStack.length-1){historyIndex++;render
 window.onclick=e=>{if(e.target==modal)modal.style.display='none';};
 const studentSize={};
 (configData.students||[]).forEach(s=>{studentSize[s.name]=s.group||1;});
+const teacherSet=new Set((configData.teachers||[]).map(t=>t.name));
+const studentSet=new Set((configData.students||[]).map(s=>s.name));
+function personLink(name){
+  if(teacherSet.has(name))return '<span class="clickable teacher" data-id="'+name+'">'+name+'</span>';
+  if(studentSet.has(name))return '<span class="clickable student" data-id="'+name+'">'+name+'</span>';
+  return name;
+}
 function countStudents(list){return(list||[]).reduce((a,n)=>a+(studentSize[n]||1),0);}
 let historyStack=[];
 let historyTitles=[];
@@ -1000,30 +1014,44 @@ function showSlot(day,idx,fromModal=false){
  const slot=d.slots.find(s=>s.slotIndex==idx);if(!slot)return;
  const total=Object.values(slot.penalty||{}).reduce((a,b)=>a+b,0);
  let html='<h2>'+day+' slot '+idx+'</h2><p>Total penalty: '+total.toFixed(1)+'</p>';
- slot.classes.forEach(cls=>{
+ html+='<div class="slot-detail">';
+ slot.classes.forEach((cls,i)=>{
    const subj=(configData.subjects[cls.subject]||{}).name||cls.subject;
    const part=(cls.length>1)?((idx-cls.start+1)+'/'+cls.length):'1/1';
-   html+='<div class="class-block">'+
-     '<div class="class-line">'+
-       '<span class="cls-subj clickable subject" data-id="'+cls.subject+'">'+subj+'</span>'+
-       '<span class="cls-part">'+part+'</span>'+
-       '<span class="cls-room clickable cabinet" data-id="'+cls.cabinet+'">'+cls.cabinet+'</span>'+
-     '</div>'+
-     '<div class="class-line">'+
-       '<span class="cls-teach clickable teacher" data-id="'+cls.teacher+'">'+cls.teacher+'</span>'+
-       '<span class="cls-size">'+cls.size+'</span>'+
-     '</div>'+
+   html+='<div class="class-row">'+
+     '<span class="cls-subj clickable subject" data-id="'+cls.subject+'">'+subj+'</span>'+
+     '<span class="cls-teach clickable teacher" data-id="'+cls.teacher+'">'+cls.teacher+'</span>'+
+     '<span class="cls-room clickable cabinet" data-id="'+cls.cabinet+'">'+cls.cabinet+'</span>'+
+     '<span class="cls-size">'+cls.size+'</span>'+
+     '<span class="cls-part">'+part+'</span>'+
    '</div>';
-   const studs=cls.students.map(n=>'<span class="clickable student" data-id="'+n+'">'+n+'</span>').join(', ');
-   if(studs)html+='<div style="margin-bottom:4px">Students: '+studs+'</div>';
+   const studs=cls.students.map(n=>personLink(n)).join(', ');
+   if(studs)html+='<div class="class-row">Students: '+studs+'</div>';
+   if(i<slot.classes.length-1)html+='<hr/>';
  });
-html+='<div class="slot-info">'+
-  '<span title="'+(slot.penaltyDetails||[]).map(p=>p.name+" "+p.type+": "+p.amount.toFixed(1)).join('\n')+'">'+total.toFixed(1)+'</span>'+
-  '<span title="Students at home: '+(slot.home.students.join(', ')||'-')+'">'+countStudents(slot.home.students)+'</span>'+
-  '<span title="Teachers at home: '+(slot.home.teachers.join(', ')||'-')+'">'+slot.home.teachers.length+'</span>'+
-  '<span title="Students waiting for class: '+(slot.gaps.students.join(', ')||'-')+'">'+countStudents(slot.gaps.students)+'</span>'+
-  '<span title="Teachers waiting for class: '+(slot.gaps.teachers.join(', ')||'-')+'">'+slot.gaps.teachers.length+'</span>'+
-  '</div>';
+ html+='</div>';
+ const homeStu=slot.home.students.map(n=>personLink(n)).join('<br>');
+ const homeTeach=slot.home.teachers.map(n=>personLink(n)).join('<br>');
+ const waitStu=slot.gaps.students.map(n=>personLink(n)).join('<br>');
+ const waitTeach=slot.gaps.teachers.map(n=>personLink(n)).join('<br>');
+ html+='<h3>Presence</h3>';
+ html+='<table class="info-table"><tr><th></th><th>Students</th><th>Teachers</th></tr>'+
+  '<tr><td>At home</td><td>'+ (homeStu||'-') +'</td><td>'+ (homeTeach||'-') +'</td></tr>'+
+  '<tr><td>Waiting</td><td>'+ (waitStu||'-') +'</td><td>'+ (waitTeach||'-') +'</td></tr>'+
+  '</table>';
+ const penGrouped={};
+ (slot.penaltyDetails||[]).forEach(p=>{(penGrouped[p.type]=penGrouped[p.type]||[]).push(p);});
+ const types=Object.keys(penGrouped);
+ if(types.length){
+   html+='<h3>Penalties</h3><table class="info-table"><tr><th>Type</th><th>Amount</th><th>Who</th></tr>';
+   types.forEach(t=>{
+     const list=penGrouped[t];
+     const amount=list.reduce((a,x)=>a+x.amount,0).toFixed(1);
+     const names=list.map(p=>personLink(p.name)+' ('+p.amount.toFixed(1)+')').join(', ');
+     html+='<tr><td>'+t+'</td><td class="num">'+amount+'</td><td>'+names+'</td></tr>';
+   });
+   html+='</table>';
+ }
  openModal(html,!fromModal);
 }
 

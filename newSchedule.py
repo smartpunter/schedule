@@ -535,6 +535,10 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
         day["name"]: {slot: {k: 0 for k in penalties_cfg} for slot in day["slots"]}
         for day in cfg["days"]
     }
+    slot_penalty_details = {
+        day["name"]: {slot: [] for slot in day["slots"]}
+        for day in cfg["days"]
+    }
 
     # calculate penalties per slot using individual importance
     for day in cfg["days"]:
@@ -545,6 +549,7 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
                 if teacher_state[t][dname][slot] == "gap":
                     p = penalties_cfg.get("gapTeacher", 0) * teacher_importance[t] * teachers_w
                     slot_penalties[dname][slot]["gapTeacher"] += p
+                    slot_penalty_details[dname][slot].append({"name": t, "type": "gapTeacher", "amount": p})
             # gap penalties for students
             for sname in student_names:
                 if student_state[sname][dname][slot] == "gap":
@@ -555,6 +560,7 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
                         * students_w
                     )
                     slot_penalties[dname][slot]["gapStudent"] += p
+                    slot_penalty_details[dname][slot].append({"name": sname, "type": "gapStudent", "amount": p})
 
     # penalties for unoptimal slots, assigned at class start
     for day in cfg["days"]:
@@ -577,6 +583,7 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
                         * students_w
                     )
                     slot_penalties[dname][slot]["unoptimalSlot"] += p
+                    slot_penalty_details[dname][slot].append({"name": sname, "type": "unoptimalSlot", "amount": p})
 
     total_penalty = 0
     for day_map in slot_penalties.values():
@@ -599,6 +606,7 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
                 "gaps": {"students": gaps_students, "teachers": gaps_teachers},
                 "home": {"students": home_students, "teachers": home_teachers},
                 "penalty": slot_penalties[name][slot],
+                "penaltyDetails": slot_penalty_details[name][slot],
             })
         export["days"].append({"name": name, "slots": slot_list})
     export["totalPenalty"] = total_penalty
@@ -858,14 +866,9 @@ body { font-family: Arial, sans-serif; }
 .schedule-grid .cell, .schedule-grid .header { border:1px solid #999; padding:4px; vertical-align:top; }
 .schedule-grid .cell { display:flex; flex-direction:column; }
 .schedule-grid .header { background:#f0f0f0; text-align:center; }
-.class-block { display:flex; flex-direction:column; }
-.class-line { display:flex; gap:4px; }
-.class-line span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.class-line .cls-subj { flex:1 1 60%; text-align:center; }
-.class-line .cls-part { width:3em; text-align:center; }
-.class-line .cls-room { width:4em; text-align:center; }
-.class-line .cls-teach { flex:1; text-align:center; }
-.class-line .cls-size { width:3em; text-align:center; }
+.class-block { display:flex; flex-direction:column; margin-bottom:4px; }
+.class-line { display:flex; gap:4px; width:100%; }
+.class-line span { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:center; }
 .slot-info { display:flex; gap:4px; justify-content:space-between; font-size:0.9em; color:#555; cursor:pointer; margin-top:auto; }
 .slot-info span { flex:1 1 20%; text-align:center; }
 .modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); }
@@ -959,8 +962,9 @@ function buildTable(){
      const info=document.createElement('div');
      info.className='slot-info';
      info.dataset.day=day.name;info.dataset.slot=i;
-     function makeSpan(val,title){const s=document.createElement('span');s.textContent=val;s.title=title;return s;}
-     info.appendChild(makeSpan(pVal.toFixed(1),'Penalty'));
+    function makeSpan(val,title){const s=document.createElement('span');s.textContent=val;s.title=title;return s;}
+    const detail=(slot.penaltyDetails||[]).map(p=>p.name+' '+p.type+': '+p.amount.toFixed(1)).join('\n');
+    info.appendChild(makeSpan(pVal.toFixed(1),detail||'Penalty'));
      info.appendChild(makeSpan(countStudents(slot.home.students),'Students at home: '+(slot.home.students.join(', ')||'-')));
      info.appendChild(makeSpan(slot.home.teachers.length,'Teachers at home: '+(slot.home.teachers.join(', ')||'-')));
      info.appendChild(makeSpan(countStudents(slot.gaps.students),'Students waiting for class: '+(slot.gaps.students.join(', ')||'-')));
@@ -1014,7 +1018,7 @@ function showSlot(day,idx,fromModal=false){
    if(studs)html+='<div style="margin-bottom:4px">Students: '+studs+'</div>';
  });
 html+='<div class="slot-info">'+
-  '<span>'+total.toFixed(1)+'</span>'+
+  '<span title="'+(slot.penaltyDetails||[]).map(p=>p.name+" "+p.type+": "+p.amount.toFixed(1)).join('\n')+'">'+total.toFixed(1)+'</span>'+
   '<span title="Students at home: '+(slot.home.students.join(', ')||'-')+'">'+countStudents(slot.home.students)+'</span>'+
   '<span title="Teachers at home: '+(slot.home.teachers.join(', ')||'-')+'">'+slot.home.teachers.length+'</span>'+
   '<span title="Students waiting for class: '+(slot.gaps.students.join(', ')||'-')+'">'+countStudents(slot.gaps.students)+'</span>'+

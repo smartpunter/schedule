@@ -58,3 +58,4 @@ The optimizer was created iteratively while exploring OR‑Tools capabilities. T
 - Only lightly tested and may perform slowly on very large data sets.
 - The example configuration is intentionally incomplete and must be edited before use.
 
+Whole project was coded using openAI Codex tool. I do not know neither python, nor optimization models. Still, this thing works extremely well for small private school and this is miracle.

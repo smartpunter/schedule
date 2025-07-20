@@ -5,7 +5,7 @@
     "defaultOptimalSlot": [0, "Default optimal slot for subjects with unspecified optimal slot. 0 means first lesson of the day"],
     "defaultTeacherArriveEarly": [false, "Whether a teacher should appear early on morning"],
     "defaultStudentArriveEarly": [true, "Whether a student should appear early on morning"],
-    "maxTeacherSlots": [6, "Maximum amount of slots in a row, which can be assigned to teacher"],
+    "maxTeacherSlots": [8, "Maximum amount of slots in a row, which can be assigned to teacher"],
     "maxStudentSlots": [6, "Maximum amount of slots in a row, which can be assigned to student"],
     "teachersPenaltyWeight": [1, "Multiplier for teachers penalties, the higher this number, the more we try to please teachers"],
     "studentsPenaltyWeight": [1, "Multiplier for students penalties, the higher this number, the more we try to please students"]

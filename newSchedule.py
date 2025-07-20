@@ -901,13 +901,16 @@ body { font-family: Arial, sans-serif; }
 .overview-header,.overview-row{display:flex;align-items:center;}
 .overview-header span,.overview-row span{padding:4px;border-right:1px solid #999;flex:1;text-align:center;}
 .overview-header span:last-child,.overview-row span:last-child{border-right:none;}
+.overview-row{border-top:1px solid #999;}
+.overview-row:first-child{border-top:none;}
 .overview-header{background:#f0f0f0;font-weight:bold;}
-.person-name{flex:0 0 30%;text-align:left;}
-.person-info{flex:0 0 15%;}
-.person-pen{flex:0 0 15%;text-align:right;}
-.person-hours{flex:0 0 20%;text-align:right;}
-.person-time{flex:0 0 20%;text-align:right;}
-.subject-list{border-top:1px solid #999;border-left:1px solid #999;border-right:1px solid #999;}
+.person-name{flex:0 0 14%;text-align:left;}
+.person-info{flex:0 0 12%;}
+.person-pen{flex:0 0 8%;text-align:right;}
+.person-hours{flex:0 0 8%;text-align:right;}
+.person-time{flex:0 0 8%;text-align:right;}
+.person-subjects{flex:0 0 50%;text-align:left;padding:0;}
+.subject-list{display:flex;flex-direction:column;}
 .subject-line{display:flex;gap:6px;border-top:1px solid #ddd;padding:2px 4px;}
 .subject-line:first-child{border-top:none;}
 .subject-name{flex:0 0 60%;text-align:left;}
@@ -941,12 +944,22 @@ backBtn.onclick=()=>{if(historyIndex>0){historyIndex--;renderModal();}};
 fwdBtn.onclick=()=>{if(historyIndex<historyStack.length-1){historyIndex++;renderModal();}};
 window.onclick=e=>{if(e.target==modal)modal.style.display='none';};
 const studentSize={};
-(configData.students||[]).forEach(s=>{studentSize[s.name]=s.group||1;});
-const teacherSet=new Set((configData.teachers||[]).map(t=>t.name));
-const studentSet=new Set((configData.students||[]).map(s=>s.name));
-function personLink(name){
-  if(teacherSet.has(name))return '<span class="clickable teacher" data-id="'+name+'">'+name+'</span>';
-  if(studentSet.has(name))return '<span class="clickable student" data-id="'+name+'">'+name+'</span>';
+(configData.students||[]).forEach((s,i)=>{studentSize[s.name]=s.group||1;});
+const teacherIndex={};
+(configData.teachers||[]).forEach((t,i)=>{teacherIndex[t.name]=i;});
+const studentIndex={};
+(configData.students||[]).forEach((s,i)=>{studentIndex[s.name]=i;});
+const teacherSet=new Set(Object.keys(teacherIndex));
+const studentSet=new Set(Object.keys(studentIndex));
+function personLink(name,role){
+  if(role==='teacher' || (!role && teacherSet.has(name) && !studentSet.has(name))){
+    const id=teacherIndex[name];
+    return '<span class="clickable teacher" data-id="'+id+'">'+name+'</span>';
+  }
+  if(role==='student' || (!role && studentSet.has(name) && !teacherSet.has(name))){
+    const id=studentIndex[name];
+    return '<span class="clickable student" data-id="'+id+'">'+name+'</span>';
+  }
   return name;
 }
 function countStudents(list){return(list||[]).reduce((a,n)=>a+(studentSize[n]||1),0);}
@@ -1000,7 +1013,7 @@ function buildTable(){
         '<span class="cls-part">'+part+'</span>';
        const l2=document.createElement('div');
        l2.className='class-line';
-       l2.innerHTML='<span class="cls-teach clickable teacher" data-id="'+cls.teacher+'">'+cls.teacher+'</span>'+
+       l2.innerHTML='<span class="cls-teach clickable teacher" data-id="'+teacherIndex[cls.teacher]+'">'+cls.teacher+'</span>'+
         '<span class="cls-size">'+cls.size+'</span>';
        block.appendChild(l1);block.appendChild(l2);
        cell.appendChild(block);
@@ -1053,20 +1066,20 @@ function showSlot(day,idx,fromModal=false){
    html+='<div class="slot-class">'+
      '<div class="detail-line">'+
        '<span class="detail-subj clickable subject" data-id="'+cls.subject+'">'+subj+'</span>'+
-       '<span class="detail-teacher clickable teacher" data-id="'+cls.teacher+'">'+cls.teacher+'</span>'+
+       '<span class="detail-teacher clickable teacher" data-id="'+teacherIndex[cls.teacher]+'">'+cls.teacher+'</span>'+
        '<span class="detail-room clickable cabinet" data-id="'+cls.cabinet+'">'+cls.cabinet+'</span>'+
        '<span class="detail-size">'+cls.size+'</span>'+
        '<span class="detail-part">'+part+'</span>'+
      '</div>';
-   const studs=cls.students.map(n=>personLink(n)).join(', ');
+   const studs=cls.students.map(n=>personLink(n,'student')).join(', ');
    if(studs)html+='<div class="detail-students">'+studs+'</div>';
    html+='</div>';
  });
  html+='</div>';
- const homeStu=slot.home.students.map(n=>personLink(n)).join(', ');
- const homeTeach=slot.home.teachers.map(n=>personLink(n)).join(', ');
- const waitStu=slot.gaps.students.map(n=>personLink(n)).join(', ');
- const waitTeach=slot.gaps.teachers.map(n=>personLink(n)).join(', ');
+ const homeStu=slot.home.students.map(n=>personLink(n,'student')).join(', ');
+ const homeTeach=slot.home.teachers.map(n=>personLink(n,'teacher')).join(', ');
+ const waitStu=slot.gaps.students.map(n=>personLink(n,'student')).join(', ');
+ const waitTeach=slot.gaps.teachers.map(n=>personLink(n,'teacher')).join(', ');
  html+='<h3>Presence</h3>';
  html+='<table class="info-table"><tr><th></th><th>Students</th><th>Teachers</th></tr>'+
   '<tr><td>At home</td><td>'+ (homeStu||'-') +'</td><td>'+ (homeTeach||'-') +'</td></tr>'+
@@ -1081,7 +1094,10 @@ function showSlot(day,idx,fromModal=false){
      const list=penGrouped[t];
      const amount=list.reduce((a,x)=>a+x.amount,0);
      if(amount>0){
-       const names=list.map(p=>personLink(p.name)+' ('+p.amount.toFixed(1)+')').join(', ');
+      const names=list.map(p=>{
+        const role=p.type==='gapTeacher'?'teacher':'student';
+        return personLink(p.name,role)+' ('+p.amount.toFixed(1)+')';
+      }).join(', ');
        html+='<tr><td>'+t+'</td><td class="num">'+amount.toFixed(1)+'</td><td>'+names+'</td></tr>';
      }
    });
@@ -1201,35 +1217,31 @@ function buildTeachers(){
  cont.innerHTML='';
  const header=document.createElement('div');
  header.className='overview-header';
- header.innerHTML='<span class="person-name">Teacher</span><span class="person-info">Priority<br>Arrive</span><span class="person-pen">Penalty</span><span class="person-hours">Hours</span><span class="person-time">At school</span>';
+  header.innerHTML='<span class="person-name">Teacher</span><span class="person-info">Priority<br>Arrive</span><span class="person-pen">Penalty</span><span class="person-hours">Hours</span><span class="person-time">At school</span><span class="person-subjects">Subject<br>Cls | Avg</span>';
  cont.appendChild(header);
  const infos=(configData.teachers||[]).map(t=>{return{info:t,stat:computeTeacherInfo(t.name)}});
  infos.sort((a,b)=>b.stat.penalty-a.stat.penalty);
- infos.forEach(item=>{
+  infos.forEach(item=>{
    const row=document.createElement('div');
    row.className='overview-row';
    const arr=item.stat.arrive?"yes":"no";
    const pr=item.info.importance!==undefined?item.info.importance:(configData.settings.defaultTeacherImportance||[1])[0];
-   row.innerHTML='<span class="person-name clickable teacher" data-id="'+item.info.name+'">'+item.info.name+'</span>'+
+   let subjHtml='';
+   Object.keys(item.stat.subjects).forEach(sid=>{
+     const s=item.stat.subjects[sid];
+     const name=(configData.subjects[sid]||{}).name||sid;
+     subjHtml+='<div class="subject-line"><span class="subject-name clickable subject" data-id="'+sid+'">'+name+'</span>'+
+       '<span class="subject-count">'+s.count+'</span>'+
+       '<span class="subject-extra">'+s.avg+'</span></div>';
+   });
+   row.innerHTML='<span class="person-name clickable teacher" data-id="'+teacherIndex[item.info.name]+'">'+item.info.name+'</span>'+
      '<span class="person-info">'+pr+'<br>'+arr+'</span>'+
      '<span class="person-pen">'+item.stat.penalty.toFixed(1)+'</span>'+
      '<span class="person-hours">'+item.stat.hours+'</span>'+
-     '<span class="person-time">'+item.stat.time+'</span>';
+     '<span class="person-time">'+item.stat.time+'</span>'+
+     '<span class="person-subjects"><div class="subject-list">'+subjHtml+'</div></span>';
    cont.appendChild(row);
-   const subjDiv=document.createElement('div');
-   subjDiv.className='subject-list';
-   Object.keys(item.stat.subjects).forEach((sid,i)=>{
-     const s=item.stat.subjects[sid];
-     const line=document.createElement('div');
-     line.className='subject-line';
-     const name=(configData.subjects[sid]||{}).name||sid;
-     line.innerHTML='<span class="subject-name clickable subject" data-id="'+sid+'">'+name+'</span>'+
-       '<span class="subject-count">'+s.count+'</span>'+
-       '<span class="subject-extra">'+s.avg+'</span>';
-     subjDiv.appendChild(line);
-   });
-   cont.appendChild(subjDiv);
- });
+  });
 }
 
 function buildStudents(){
@@ -1237,39 +1249,36 @@ function buildStudents(){
  cont.innerHTML='';
  const header=document.createElement('div');
  header.className='overview-header';
- header.innerHTML='<span class="person-name">Student</span><span class="person-info">Priority<br>Arrive</span><span class="person-pen">Penalty</span><span class="person-hours">Hours</span><span class="person-time">At school</span>';
+  header.innerHTML='<span class="person-name">Student</span><span class="person-info">Priority<br>Arrive</span><span class="person-pen">Penalty</span><span class="person-hours">Hours</span><span class="person-time">At school</span><span class="person-subjects">Subject<br>Cls | Pen</span>';
  cont.appendChild(header);
  const infos=(configData.students||[]).map(s=>{return{info:s,stat:computeStudentInfo(s.name)}});
  infos.sort((a,b)=>b.stat.penalty-a.stat.penalty);
- infos.forEach(item=>{
+  infos.forEach(item=>{
    const row=document.createElement('div');
    row.className='overview-row';
    const arr=item.stat.arrive?"yes":"no";
    const pr=item.info.importance!==undefined?item.info.importance:(configData.settings.defaultStudentImportance||[0])[0];
-   row.innerHTML='<span class="person-name clickable student" data-id="'+item.info.name+'">'+item.info.name+'</span>'+
-     '<span class="person-info">'+pr+'<br>'+arr+'</span>'+
-     '<span class="person-pen">'+item.stat.penalty.toFixed(1)+'</span>'+
-     '<span class="person-hours">'+item.stat.hours+'</span>'+
-     '<span class="person-time">'+item.stat.time+'</span>';
-   cont.appendChild(row);
-   const subjDiv=document.createElement('div');
-   subjDiv.className='subject-list';
+   let subjHtml='';
    Object.keys(item.stat.subjects).forEach(sid=>{
      const s=item.stat.subjects[sid];
      const name=(configData.subjects[sid]||{}).name||sid;
-     const line=document.createElement('div');
-     line.className='subject-line';
-     line.innerHTML='<span class="subject-name clickable subject" data-id="'+sid+'">'+name+'</span>'+
+     subjHtml+='<div class="subject-line"><span class="subject-name clickable subject" data-id="'+sid+'">'+name+'</span>'+
        '<span class="subject-count">'+s.count+'</span>'+
-       '<span class="subject-extra">'+(s.penalty||0).toFixed(1)+'</span>';
-     subjDiv.appendChild(line);
+       '<span class="subject-extra">'+(s.penalty||0).toFixed(1)+'</span></div>';
    });
-   cont.appendChild(subjDiv);
- });
+   row.innerHTML='<span class="person-name clickable student" data-id="'+studentIndex[item.info.name]+'">'+item.info.name+'</span>'+
+     '<span class="person-info">'+pr+'<br>'+arr+'</span>'+
+     '<span class="person-pen">'+item.stat.penalty.toFixed(1)+'</span>'+
+     '<span class="person-hours">'+item.stat.hours+'</span>'+
+     '<span class="person-time">'+item.stat.time+'</span>'+
+     '<span class="person-subjects"><div class="subject-list">'+subjHtml+'</div></span>';
+   cont.appendChild(row);
+  });
 }
 
-function showTeacher(name,fromModal=false){
- const info=(configData.teachers||[]).find(t=>t.name===name)||{};
+function showTeacher(idx,fromModal=false){
+ const info=(configData.teachers||[])[idx]||{};
+ const name=info.name||'';
  const defImp=(configData.settings.defaultTeacherImportance||[1])[0];
  const imp=info.importance!==undefined?info.importance:defImp;
  const stats=computeTeacherStats(name);
@@ -1279,13 +1288,14 @@ function showTeacher(name,fromModal=false){
  html+='<h3>Subjects</h3><ul>';
  (info.subjects||[]).forEach(sid=>{const sn=(configData.subjects[sid]||{}).name||sid;html+='<li><span class="clickable subject" data-id="'+sid+'">'+sn+'</span></li>';});
  html+='</ul><h3>Schedule</h3><ul>';
- scheduleData.days.forEach(day=>{day.slots.forEach(sl=>{sl.classes.forEach(cls=>{if(cls.teacher===name){const sn=(configData.subjects[cls.subject]||{}).name||cls.subject;const part=cls.length>1?' (part '+(sl.slotIndex-cls.start+1)+'/'+cls.length+')':'';html+='<li>'+day.name+' slot '+sl.slotIndex+': <span class="clickable subject" data-id="'+cls.subject+'">'+sn+'</span> ('+cls.size+' st)'+part+'</li>';}});});});
+scheduleData.days.forEach(day=>{day.slots.forEach(sl=>{sl.classes.forEach(cls=>{if(cls.teacher===name){const sn=(configData.subjects[cls.subject]||{}).name||cls.subject;const part=cls.length>1?' (part '+(sl.slotIndex-cls.start+1)+'/'+cls.length+')':'';html+='<li>'+day.name+' slot '+sl.slotIndex+': <span class="clickable subject" data-id="'+cls.subject+'">'+sn+'</span> ('+cls.size+' st)'+part+'</li>';}});});});
  html+='</ul>';
  openModal(html,!fromModal);
 }
 
-function showStudent(name,fromModal=false){
- const info=(configData.students||[]).find(s=>s.name===name)||{};
+function showStudent(idx,fromModal=false){
+ const info=(configData.students||[])[idx]||{};
+ const name=info.name||'';
  const defImp=(configData.settings.defaultStudentImportance||[0])[0];
  const imp=info.importance!==undefined?info.importance:defImp;
  const stats=computeStudentStats(name);
@@ -1294,7 +1304,7 @@ function showStudent(name,fromModal=false){
  html+='<h3>Subjects</h3><ul>';
  (info.subjects||[]).forEach(sid=>{const sn=(configData.subjects[sid]||{}).name||sid;html+='<li><span class="clickable subject" data-id="'+sid+'">'+sn+'</span></li>';});
  html+='</ul><h3>Schedule</h3><ul>';
- scheduleData.days.forEach(day=>{day.slots.forEach(sl=>{sl.classes.forEach(cls=>{if(cls.students.includes(name)){const sn=(configData.subjects[cls.subject]||{}).name||cls.subject;const part=cls.length>1?' (part '+(sl.slotIndex-cls.start+1)+'/'+cls.length+')':'';html+='<li>'+day.name+' slot '+sl.slotIndex+': <span class="clickable subject" data-id="'+cls.subject+'">'+sn+'</span> with <span class="clickable teacher" data-id="'+cls.teacher+'">'+cls.teacher+'</span>'+part+'</li>';}});});});
+ scheduleData.days.forEach(day=>{day.slots.forEach(sl=>{sl.classes.forEach(cls=>{if(cls.students.includes(name)){const sn=(configData.subjects[cls.subject]||{}).name||cls.subject;const part=cls.length>1?' (part '+(sl.slotIndex-cls.start+1)+'/'+cls.length+')':'';html+='<li>'+day.name+' slot '+sl.slotIndex+': <span class="clickable subject" data-id="'+cls.subject+'">'+sn+'</span> with <span class="clickable teacher" data-id="'+teacherIndex[cls.teacher]+'">'+cls.teacher+'</span>'+part+'</li>';}});});});
  html+='</ul>';
  openModal(html,!fromModal);
 }
@@ -1302,7 +1312,7 @@ function showStudent(name,fromModal=false){
 function showCabinet(name,fromModal=false){
  const info=configData.cabinets[name]||{};
  let html='<h2>Room: '+name+'</h2><p>Capacity: '+(info.capacity||'-')+'</p><h3>Schedule</h3><ul>';
- scheduleData.days.forEach(day=>{day.slots.forEach(sl=>{sl.classes.forEach(cls=>{if(cls.cabinet===name){const sn=(configData.subjects[cls.subject]||{}).name||cls.subject;const part=cls.length>1?' (part '+(sl.slotIndex-cls.start+1)+'/'+cls.length+')':'';html+='<li>'+day.name+' slot '+sl.slotIndex+': <span class="clickable subject" data-id="'+cls.subject+'">'+sn+'</span> by <span class="clickable teacher" data-id="'+cls.teacher+'">'+cls.teacher+'</span> ('+cls.size+' st)'+part+'</li>';}});});});
+ scheduleData.days.forEach(day=>{day.slots.forEach(sl=>{sl.classes.forEach(cls=>{if(cls.cabinet===name){const sn=(configData.subjects[cls.subject]||{}).name||cls.subject;const part=cls.length>1?' (part '+(sl.slotIndex-cls.start+1)+'/'+cls.length+')':'';html+='<li>'+day.name+' slot '+sl.slotIndex+': <span class="clickable subject" data-id="'+cls.subject+'">'+sn+'</span> by <span class="clickable teacher" data-id="'+teacherIndex[cls.teacher]+'">'+cls.teacher+'</span> ('+cls.size+' st)'+part+'</li>';}});});});
  html+='</ul>';
  openModal(html,!fromModal);
 }
@@ -1314,11 +1324,11 @@ function showSubject(id,fromModal=false){
  html+='<p>Classes: '+(subj.classes||[]).join(', ')+'</p>';
  html+='<p>Optimal slot: '+(subj.optimalSlot!==undefined?subj.optimalSlot:defOpt)+'</p>';
  html+='<h3>Teachers</h3><ul>';
- (configData.teachers||[]).forEach(t=>{if((t.subjects||[]).includes(id)){html+='<li><span class="clickable teacher" data-id="'+t.name+'">'+t.name+'</span></li>';}});
+ (configData.teachers||[]).forEach((t,i)=>{if((t.subjects||[]).includes(id)){html+='<li><span class="clickable teacher" data-id="'+i+'">'+t.name+'</span></li>';}});
  html+='</ul><h3>Students</h3><ul>';
- (configData.students||[]).forEach(s=>{if((s.subjects||[]).includes(id)){html+='<li><span class="clickable student" data-id="'+s.name+'">'+s.name+'</span> ('+(studentSize[s.name]||1)+')</li>';}});
+ (configData.students||[]).forEach((s,i)=>{if((s.subjects||[]).includes(id)){html+='<li><span class="clickable student" data-id="'+i+'">'+s.name+'</span> ('+(studentSize[s.name]||1)+')</li>';}});
  html+='</ul><h3>Schedule</h3><ul>';
- scheduleData.days.forEach(day=>{day.slots.forEach(sl=>{sl.classes.forEach(cls=>{if(cls.subject===id){const part=cls.length>1?' (part '+(sl.slotIndex-cls.start+1)+'/'+cls.length+')':'';html+='<li>'+day.name+' slot '+sl.slotIndex+': <span class="clickable teacher" data-id="'+cls.teacher+'">'+cls.teacher+'</span> ('+cls.size+' st)'+part+'</li>';}});});});
+ scheduleData.days.forEach(day=>{day.slots.forEach(sl=>{sl.classes.forEach(cls=>{if(cls.subject===id){const part=cls.length>1?' (part '+(sl.slotIndex-cls.start+1)+'/'+cls.length+')':'';html+='<li>'+day.name+' slot '+sl.slotIndex+': <span class="clickable teacher" data-id="'+teacherIndex[cls.teacher]+'">'+cls.teacher+'</span> ('+cls.size+' st)'+part+'</li>';}});});});
  html+='</ul>';
  openModal(html,!fromModal);
 }
@@ -1329,8 +1339,8 @@ document.addEventListener('click',e=>{
  if(slotElem){showSlot(slotElem.dataset.day,parseInt(slotElem.dataset.slot),fromModal);return;}
  const t=e.target;
  if(t.classList.contains('subject')){showSubject(t.dataset.id,fromModal);}
- else if(t.classList.contains('teacher')){showTeacher(t.dataset.id,fromModal);}
- else if(t.classList.contains('student')){showStudent(t.dataset.id,fromModal);}
+ else if(t.classList.contains('teacher')){showTeacher(parseInt(t.dataset.id),fromModal);}
+ else if(t.classList.contains('student')){showStudent(parseInt(t.dataset.id),fromModal);}
  else if(t.classList.contains('cabinet')){showCabinet(t.dataset.id,fromModal);}
 });
 

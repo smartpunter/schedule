@@ -875,7 +875,7 @@ body { font-family: Arial, sans-serif; }
 .slot-info { display:flex; gap:4px; justify-content:space-between; font-size:0.9em; color:#555; cursor:pointer; margin-top:auto; }
 .slot-info span { flex:1 1 20%; text-align:center; }
 .modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); }
-.modal-content { background:#fff; margin:5% auto; padding:20px; width:90%; max-height:90%; overflow:auto; }
+.modal-content { background:#fff; margin:5% auto; padding:20px; width:90%; max-height:85%; overflow:auto; }
 .modal-header { position:relative; text-align:center; margin-bottom:10px; }
 .close { position:absolute; right:0; top:0; cursor:pointer; font-size:20px; }
 .history { display:inline-flex; gap:6px; justify-content:center; flex-wrap:wrap; }

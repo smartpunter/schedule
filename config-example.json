@@ -7,15 +7,17 @@
   "settings": {
     "defaultTeacherImportance": [20, "Default teacher importance"],
     "defaultStudentImportance": [10, "Default student importance"],
-    "defaultOptimalSlot": [3, "Default optimal slot for subjects with unspecified optimal slot"],
-    "maxTeacherSlots": [5, "Maximum amount of slots in a row, which can be assigned to teacher"],
+    "defaultOptimalSlot": [0, "Default optimal slot for subjects with unspecified optimal slot. 0 means first lesson of the day"],
+    "defaultTeacherArriveEarly": [false, "Whether a teacher should appear early on morning"],
+    "defaultStudentArriveEarly": [true, "Whether a student should appear early on morning"],
+    "maxTeacherSlots": [6, "Maximum amount of slots in a row, which can be assigned to teacher"],
     "maxStudentSlots": [5, "Maximum amount of slots in a row, which can be assigned to student"],
-    "teachersPenaltyWeight": [1, "Multiplier for teachers penalties, the higher this number, the more we try to please students"],
+    "teachersPenaltyWeight": [1, "Multiplier for teachers penalties, the higher this number, the more we try to please teachers"],
     "studentsPenaltyWeight": [1, "Multiplier for students penalties, the higher this number, the more we try to please students"]
   },
   "penalties": {
-    "gapTeacher": [20, "Penalty for having gap in teacher schedule"],
-    "gapStudent": [12, "Penalty for having gap in student schedule"],
+    "gapTeacher": [5, "Penalty for having gap in teacher schedule"],
+    "gapStudent": [15, "Penalty for having gap in student schedule"],
     "unoptimalSlot": [1, "Penalty for not having subject at optimal slot."]
   },
 
@@ -46,7 +48,7 @@
 
   "teachers": [
     { "importance": 2, "name": "Nicole", "subjects": ["DP1_English_Literature_SL", "Y11_English_Literature"], "importance": 2 },
-    { "name": "Nick",   "subjects": ["DP2_Mathematics_HL", "Y11_Mathematics"] },
+    { "arriveEarly": true, "name": "Nick",   "subjects": ["DP2_Mathematics_HL", "Y11_Mathematics"] },
     { "name": "David",  "subjects": ["Y11_History"] },
     { "name": "Ana",    "subjects": ["Y11_Geography"] },
     { "name": "Olga",   "subjects": ["DP2_Business_HL"] }
@@ -55,7 +57,7 @@
   "students": [
     { "name": "Mike",      "subjects": ["DP1_English_Literature_SL", "DP2_Mathematics_HL"] },
     { "name": "Aleksander", "subjects": ["DP1_English_Literature_SL"] },
-    { "name": "Ekaterina",  "subjects": ["DP2_Mathematics_HL", "DP2_Business_HL"] },
+    { "arriveEarly": false, "name": "Ekaterina",  "subjects": ["DP2_Mathematics_HL", "DP2_Business_HL"] },
     { "importance": 3, "name": "Daniil", "subjects": ["DP2_Mathematics_HL"] },
     { "group": 10, "name": "Y11_Students_French",
       "subjects": ["Y11_English_Literature", "Y11_Mathematics", "Y11_History", "Y11_Geography" ] }

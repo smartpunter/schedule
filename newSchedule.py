@@ -856,21 +856,28 @@ def generate_html(schedule: Dict[str, Any], cfg: Dict[str, Any], path: str = "sc
 body { font-family: Arial, sans-serif; }
 table { border-collapse: collapse; width: 100%; }
 th, td { border: 1px solid #999; padding: 4px; vertical-align: top; }
+td { display:flex; flex-direction:column; }
 th { background: #f0f0f0; }
 .class-line { display: flex; gap: 4px; }
-.class-line span { flex: 1 1 20%; }
-.slot-info { display:flex; gap:4px; justify-content:space-between; font-size:0.9em; color:#555; margin-top:2px; cursor:pointer; }
+.class-line span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.class-line .cls-subj { flex: 0 0 45%; text-align: center; }
+.class-line .cls-part { flex: 0 0 10%; }
+.class-line .cls-teach { flex: 0 0 20%; }
+.class-line .cls-room { flex: 0 0 20%; }
+.class-line .cls-size { flex: 0 0 5%; }
+.slot-info { display:flex; gap:4px; justify-content:space-between; font-size:0.9em; color:#555; cursor:pointer; margin-top:auto; }
 .slot-info span { flex:1 1 25%; text-align:center; }
 .modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); }
 .modal-content { background:#fff; margin:5% auto; padding:20px; width:90%; max-height:90%; overflow:auto; }
 .close { float:right; cursor:pointer; font-size:20px; }
+.nav { float:right; cursor:pointer; font-size:20px; margin-right:8px; display:none; }
 .clickable { color:#0066cc; cursor:pointer; text-decoration:underline; }
 </style>
 </head>
 <body>
 <h1>Schedule Overview</h1>
 <div id="table"></div>
-<div id="modal" class="modal"><div class="modal-content"><span id="close" class="close">&#10006;</span><div id="modal-body"></div></div></div>
+<div id="modal" class="modal"><div class="modal-content"><span id="back" class="nav">&#9664;</span><span id="forward" class="nav">&#9654;</span><span id="close" class="close">&#10006;</span><div id="modal-body"></div></div></div>
 <script>
 const scheduleData = __SCHEDULE__;
 const configData = __CONFIG__;
@@ -879,13 +886,28 @@ const configData = __CONFIG__;
 (function(){
 const modal=document.getElementById('modal');
 const close=document.getElementById('close');
+const backBtn=document.getElementById('back');
+const fwdBtn=document.getElementById('forward');
 const modalBody=document.getElementById('modal-body');
 close.onclick=()=>{modal.style.display='none';};
+backBtn.onclick=()=>{if(historyIndex>0){historyIndex--;renderModal();}};
+fwdBtn.onclick=()=>{if(historyIndex<historyStack.length-1){historyIndex++;renderModal();}};
 window.onclick=e=>{if(e.target==modal)modal.style.display='none';};
 const studentSize={};
 (configData.students||[]).forEach(s=>{studentSize[s.name]=s.group||1;});
 function countStudents(list){return(list||[]).reduce((a,n)=>a+(studentSize[n]||1),0);}
-function openModal(html){modalBody.innerHTML=html;modal.style.display='block';}
+let historyStack=[];
+let historyIndex=-1;
+function renderModal(){
+ modalBody.innerHTML=historyStack[historyIndex]||'';
+ modal.style.display='block';
+ backBtn.style.display=historyIndex>0?'inline':'none';
+ fwdBtn.style.display=historyIndex<historyStack.length-1?'inline':'none';
+}
+function openModal(html,reset=true){
+ if(reset){historyStack=[html];historyIndex=0;}else{historyStack=historyStack.slice(0,historyIndex+1);historyStack.push(html);historyIndex++;}
+ renderModal();
+}
 const COLOR_MIN=[220,255,220];
 const COLOR_MID=[255,255,255];
 const COLOR_MAX=[255,220,220];
@@ -913,11 +935,11 @@ function buildTable(){
        line.className='class-line';
        const subj=(configData.subjects[cls.subject]||{}).name||cls.subject;
        const part=(cls.length>1)?((i-cls.start+1)+'/'+cls.length):'1/1';
-       line.innerHTML='<span class="clickable subject" data-id="'+cls.subject+'">'+subj+'</span>'+
-         '<span>'+part+'</span>'+
-         '<span class="clickable teacher" data-id="'+cls.teacher+'">'+cls.teacher+'</span>'+
-         '<span class="clickable cabinet" data-id="'+cls.cabinet+'">'+cls.cabinet+'</span>'+
-         '<span>'+cls.size+'</span>';
+      line.innerHTML='<span class="cls-subj clickable subject" data-id="'+cls.subject+'">'+subj+'</span>'+
+        '<span class="cls-part">'+part+'</span>'+
+        '<span class="cls-teach clickable teacher" data-id="'+cls.teacher+'">'+cls.teacher+'</span>'+
+        '<span class="cls-room clickable cabinet" data-id="'+cls.cabinet+'">'+cls.cabinet+'</span>'+
+        '<span class="cls-size">'+cls.size+'</span>';
        td.appendChild(line);
      });
      const info=document.createElement('div');
@@ -956,7 +978,7 @@ function buildTable(){
  cells.forEach(c=>{c.el.style.background=colorFor(c.val);c.el.title='Penalty: '+c.val.toFixed(1);});
 }
 
-function showSlot(day,idx){
+function showSlot(day,idx,fromModal=false){
  const d=scheduleData.days.find(x=>x.name===day);if(!d)return;
  const slot=d.slots.find(s=>s.slotIndex==idx);if(!slot)return;
  const total=Object.values(slot.penalty||{}).reduce((a,b)=>a+b,0);
@@ -964,23 +986,23 @@ function showSlot(day,idx){
  slot.classes.forEach(cls=>{
    const subj=(configData.subjects[cls.subject]||{}).name||cls.subject;
    const part=(cls.length>1)?((idx-cls.start+1)+'/'+cls.length):'1/1';
-   html+='<div class="class-line">'+
-     '<span class="clickable subject" data-id="'+cls.subject+'">'+subj+'</span>'+
-     '<span>'+part+'</span>'+
-     '<span class="clickable teacher" data-id="'+cls.teacher+'">'+cls.teacher+'</span>'+
-     '<span class="clickable cabinet" data-id="'+cls.cabinet+'">'+cls.cabinet+'</span>'+
-     '<span>'+cls.size+'</span>'+
-     '</div>';
+  html+='<div class="class-line">'+
+    '<span class="cls-subj clickable subject" data-id="'+cls.subject+'">'+subj+'</span>'+
+    '<span class="cls-part">'+part+'</span>'+
+    '<span class="cls-teach clickable teacher" data-id="'+cls.teacher+'">'+cls.teacher+'</span>'+
+    '<span class="cls-room clickable cabinet" data-id="'+cls.cabinet+'">'+cls.cabinet+'</span>'+
+    '<span class="cls-size">'+cls.size+'</span>'+
+    '</div>';
    const studs=cls.students.map(n=>'<span class="clickable student" data-id="'+n+'">'+n+'</span>').join(', ');
    if(studs)html+='<div style="margin-bottom:4px">Students: '+studs+'</div>';
  });
- html+='<div class="slot-info" style="margin-top:6px">'+
+ html+='<div class="slot-info">'+
    '<span title="Students at home: '+(slot.home.students.join(', ')||'-')+'">'+countStudents(slot.home.students)+'</span>'+
    '<span title="Teachers at home: '+(slot.home.teachers.join(', ')||'-')+'">'+slot.home.teachers.length+'</span>'+
    '<span title="Students waiting for class: '+(slot.gaps.students.join(', ')||'-')+'">'+countStudents(slot.gaps.students)+'</span>'+
    '<span title="Teachers waiting for class: '+(slot.gaps.teachers.join(', ')||'-')+'">'+slot.gaps.teachers.length+'</span>'+
    '</div>';
- openModal(html);
+ openModal(html,!fromModal);
 }
 
 function computeTeacherStats(name){
@@ -1025,7 +1047,7 @@ function computeStudentStats(name){
  return{gap:gap,time:time};
 }
 
-function showTeacher(name){
+function showTeacher(name,fromModal=false){
  const info=(configData.teachers||[]).find(t=>t.name===name)||{};
  const defImp=(configData.settings.defaultTeacherImportance||[1])[0];
  const imp=info.importance!==undefined?info.importance:defImp;
@@ -1038,10 +1060,10 @@ function showTeacher(name){
  html+='</ul><h3>Schedule</h3><ul>';
  scheduleData.days.forEach(day=>{day.slots.forEach(sl=>{sl.classes.forEach(cls=>{if(cls.teacher===name){const sn=(configData.subjects[cls.subject]||{}).name||cls.subject;const part=cls.length>1?' (part '+(sl.slotIndex-cls.start+1)+'/'+cls.length+')':'';html+='<li>'+day.name+' slot '+sl.slotIndex+': <span class="clickable subject" data-id="'+cls.subject+'">'+sn+'</span> ('+cls.size+' st)'+part+'</li>';}});});});
  html+='</ul>';
- openModal(html);
+ openModal(html,!fromModal);
 }
 
-function showStudent(name){
+function showStudent(name,fromModal=false){
  const info=(configData.students||[]).find(s=>s.name===name)||{};
  const defImp=(configData.settings.defaultStudentImportance||[0])[0];
  const imp=info.importance!==undefined?info.importance:defImp;
@@ -1053,18 +1075,18 @@ function showStudent(name){
  html+='</ul><h3>Schedule</h3><ul>';
  scheduleData.days.forEach(day=>{day.slots.forEach(sl=>{sl.classes.forEach(cls=>{if(cls.students.includes(name)){const sn=(configData.subjects[cls.subject]||{}).name||cls.subject;const part=cls.length>1?' (part '+(sl.slotIndex-cls.start+1)+'/'+cls.length+')':'';html+='<li>'+day.name+' slot '+sl.slotIndex+': <span class="clickable subject" data-id="'+cls.subject+'">'+sn+'</span> with <span class="clickable teacher" data-id="'+cls.teacher+'">'+cls.teacher+'</span>'+part+'</li>';}});});});
  html+='</ul>';
- openModal(html);
+ openModal(html,!fromModal);
 }
 
-function showCabinet(name){
+function showCabinet(name,fromModal=false){
  const info=configData.cabinets[name]||{};
  let html='<h2>Room: '+name+'</h2><p>Capacity: '+(info.capacity||'-')+'</p><h3>Schedule</h3><ul>';
  scheduleData.days.forEach(day=>{day.slots.forEach(sl=>{sl.classes.forEach(cls=>{if(cls.cabinet===name){const sn=(configData.subjects[cls.subject]||{}).name||cls.subject;const part=cls.length>1?' (part '+(sl.slotIndex-cls.start+1)+'/'+cls.length+')':'';html+='<li>'+day.name+' slot '+sl.slotIndex+': <span class="clickable subject" data-id="'+cls.subject+'">'+sn+'</span> by <span class="clickable teacher" data-id="'+cls.teacher+'">'+cls.teacher+'</span> ('+cls.size+' st)'+part+'</li>';}});});});
  html+='</ul>';
- openModal(html);
+ openModal(html,!fromModal);
 }
 
-function showSubject(id){
+function showSubject(id,fromModal=false){
  const subj=configData.subjects[id]||{};
  const defOpt=(configData.settings.defaultOptimalSlot||[0])[0];
  let html='<h2>Subject: '+(subj.name||id)+'</h2>';
@@ -1077,17 +1099,18 @@ function showSubject(id){
  html+='</ul><h3>Schedule</h3><ul>';
  scheduleData.days.forEach(day=>{day.slots.forEach(sl=>{sl.classes.forEach(cls=>{if(cls.subject===id){const part=cls.length>1?' (part '+(sl.slotIndex-cls.start+1)+'/'+cls.length+')':'';html+='<li>'+day.name+' slot '+sl.slotIndex+': <span class="clickable teacher" data-id="'+cls.teacher+'">'+cls.teacher+'</span> ('+cls.size+' st)'+part+'</li>';}});});});
  html+='</ul>';
- openModal(html);
+ openModal(html,!fromModal);
 }
 
 document.addEventListener('click',e=>{
+ const fromModal=modal.contains(e.target);
  const slotElem=e.target.closest('.slot-info');
- if(slotElem){showSlot(slotElem.dataset.day,parseInt(slotElem.dataset.slot));return;}
+ if(slotElem){showSlot(slotElem.dataset.day,parseInt(slotElem.dataset.slot),fromModal);return;}
  const t=e.target;
- if(t.classList.contains('subject')){showSubject(t.dataset.id);}
- else if(t.classList.contains('teacher')){showTeacher(t.dataset.id);}
- else if(t.classList.contains('student')){showStudent(t.dataset.id);}
- else if(t.classList.contains('cabinet')){showCabinet(t.dataset.id);}
+ if(t.classList.contains('subject')){showSubject(t.dataset.id,fromModal);}
+ else if(t.classList.contains('teacher')){showTeacher(t.dataset.id,fromModal);}
+ else if(t.classList.contains('student')){showStudent(t.dataset.id,fromModal);}
+ else if(t.classList.contains('cabinet')){showCabinet(t.dataset.id,fromModal);}
 });
 
 buildTable();

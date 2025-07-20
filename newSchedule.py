@@ -447,6 +447,9 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
     student_names = [s["name"] for s in cfg.get("students", [])]
     student_size = {s["name"]: int(s.get("group", 1)) for s in cfg.get("students", [])}
 
+    # configuration parameters referenced later in the function
+    settings = cfg.get("settings", {})
+
     teacher_slots = {
         t: {day["name"]: set() for day in cfg["days"]} for t in teacher_names
     }
@@ -465,7 +468,14 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
     teacher_state = {
         t: {day["name"]: {} for day in cfg["days"]} for t in teacher_names
     }
-    teach_arrive = {t["name"]: t.get("arriveEarly", settings.get("defaultTeacherArriveEarly", [False])[0]) for t in cfg.get("teachers", [])}
+    teach_arrive = {
+        t["name"]: t.get(
+            "arriveEarly",
+            settings.get("defaultTeacherArriveEarly", [False])[0],
+        )
+        for t in cfg.get("teachers", [])
+    }
+
     for t in teacher_names:
         for day in cfg["days"]:
             name = day["name"]
@@ -506,7 +516,6 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
                 else:
                     student_state[st][name][s] = "gap"
 
-    settings = cfg.get("settings", {})
     penalties_cfg = {k: v[0] for k, v in cfg.get("penalties", {}).items()}
     teachers_w = settings.get("teachersPenaltyWeight", [1])[0]
     students_w = settings.get("studentsPenaltyWeight", [1])[0]

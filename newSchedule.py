@@ -1808,17 +1808,11 @@ def main() -> None:
 
     cfg = load_config(cfg_path)
 
-    teacher_dups = _detect_duplicates(
-        cfg.get("teachers", []),
-        ["subjects", "importance", "arriveEarly", "allowedSlots", "forbiddenSlots"],
-    )
     student_dups = _detect_duplicates(
-        cfg.get("students", []), ["subjects", "importance", "arriveEarly"]
+        cfg.get("students", []), ["subjects"]
     )
-    if teacher_dups or student_dups:
+    if student_dups:
         print("Duplicate entities detected:")
-        for names in teacher_dups:
-            print(f"Teachers: {', '.join(names)}")
         for names in student_dups:
             print(f"Students: {', '.join(names)}")
         if not auto_yes:

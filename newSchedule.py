@@ -156,6 +156,13 @@ def _prepare_fixed_classes(
                     f"Teacher {t} not available at {day} slot {slot} for subject {sid}"
                 )
 
+        primary = set(subj.get("primaryTeachers", []))
+        if primary and not primary.issubset(set(tlist)):
+            missing = ", ".join(sorted(primary - set(tlist)))
+            raise ValueError(
+                f"Lesson for subject {sid} missing primary teacher(s): {missing}"
+            )
+
         fixed[(sid, idx)] = {
             "day": day,
             "day_idx": day_index[day],

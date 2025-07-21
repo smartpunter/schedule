@@ -946,6 +946,7 @@ body { font-family: Arial, sans-serif; }
 .schedule-grid .cell, .schedule-grid .header { border:1px solid #999; padding:4px; vertical-align:top; }
 .schedule-grid .cell { display:flex; flex-direction:column; }
 .schedule-grid .header { background:#f0f0f0; text-align:center; }
+.mini-grid { margin-top:10px; }
 .class-block { display:flex; flex-direction:column; margin-bottom:4px; }
 .class-line { display:flex; gap:4px; width:100%; }
 .class-line span { flex:1; }
@@ -955,7 +956,7 @@ body { font-family: Arial, sans-serif; }
 .slot-info { display:flex; gap:4px; justify-content:space-between; font-size:0.9em; color:#555; cursor:pointer; margin-top:auto; }
 .slot-info span { flex:1 1 20%; text-align:center; }
 .modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); }
-.modal-content { background:#fff; margin:5% auto; padding:20px; width:90%; max-height:85%; overflow:auto; }
+.modal-content { background:#fff; position:fixed; top:5vh; bottom:5vh; left:10vw; right:10vw; margin:0; padding:20px; overflow:auto; }
 .modal-header { position:relative; text-align:center; margin-bottom:10px; }
 .close { position:absolute; right:0; top:0; cursor:pointer; font-size:20px; }
 .history { display:inline-flex; gap:6px; justify-content:center; flex-wrap:wrap; }
@@ -1038,6 +1039,12 @@ function personLink(name,role){
   }
   return name;
 }
+function teacherSpan(name,subj){
+  const id=teacherIndex[name];
+  const prim=(configData.subjects[subj]||{}).primaryTeachers||[];
+  const inner=prim.includes(name)?'<strong>'+name+'</strong>':name;
+  return '<span class="clickable teacher" data-id="'+id+'">'+inner+'</span>';
+}
 function countStudents(list){return(list||[]).reduce((a,n)=>a+(studentSize[n]||1),0);}
 let historyStack=[];
 let historyTitles=[];
@@ -1111,7 +1118,7 @@ function buildTable(){
         '<span class="cls-part">'+part+'</span>';
        const l2=document.createElement('div');
        l2.className='class-line';
-       const tNames=(cls.teachers||[]).map(t=>'<span class="clickable teacher" data-id="'+teacherIndex[t]+'">'+t+'</span>').join(', ');
+      const tNames=(cls.teachers||[]).map(t=>teacherSpan(t,cls.subject)).join(', ');
        l2.innerHTML='<span class="cls-teach">'+tNames+'</span>'+
         '<span class="cls-size">'+cls.size+'</span>';
        block.appendChild(l1);block.appendChild(l2);
@@ -1150,7 +1157,40 @@ function buildTable(){
    const b=Math.round(mix(COLOR_MID[2],COLOR_MAX[2],f));
    return `rgb(${r},${g},${b})`;
  }
- cells.forEach(c=>{c.el.style.background=colorFor(c.val);});
+cells.forEach(c=>{c.el.style.background=colorFor(c.val);});
+}
+
+function makeGrid(filterFn){
+ const maxSlots=Math.max(...scheduleData.days.map(d=>d.slots.length?Math.max(...d.slots.map(s=>s.slotIndex)):0))+1;
+ let html='<div class="schedule-grid mini-grid">';
+ html+='<div></div>';
+ scheduleData.days.forEach(d=>{html+='<div class="header">'+d.name+'</div>';});
+ for(let i=0;i<maxSlots;i++){
+   html+='<div class="header">Slot '+i+'</div>';
+   scheduleData.days.forEach(day=>{
+     const slot=day.slots.find(s=>s.slotIndex==i)||{classes:[]};
+     html+='<div class="cell">';
+     slot.classes.filter(filterFn).forEach(cls=>{
+       const subj=(configData.subjects[cls.subject]||{}).name||cls.subject;
+       const part=(cls.length>1)?((i-cls.start+1)+'/'+cls.length):'1/1';
+       const tNames=(cls.teachers||[]).map(t=>teacherSpan(t,cls.subject)).join(', ');
+       html+='<div class="class-block">'+
+        '<div class="class-line">'+
+          '<span class="cls-subj clickable subject" data-id="'+cls.subject+'">'+subj+'</span>'+
+          '<span class="cls-room clickable cabinet" data-id="'+cls.cabinet+'">'+cls.cabinet+'</span>'+
+          '<span class="cls-part">'+part+'</span>'+
+        '</div>'+
+        '<div class="class-line">'+
+          '<span class="cls-teach">'+tNames+'</span>'+
+          '<span class="cls-size">'+cls.size+'</span>'+
+        '</div>'+
+       '</div>';
+     });
+     html+='</div>';
+   });
+ }
+ html+='</div>';
+ return html;
 }
 
 function showSlot(day,idx,fromModal=false){
@@ -1165,7 +1205,7 @@ function showSlot(day,idx,fromModal=false){
    html+='<div class="slot-class">'+
      '<div class="detail-line">'+
        '<span class="detail-subj clickable subject" data-id="'+cls.subject+'">'+subj+'</span>'+
-       '<span class="detail-teacher">'+(cls.teachers||[]).map(t=>'<span class="clickable teacher" data-id="'+teacherIndex[t]+'">'+t+'</span>').join(', ')+'</span>'+
+      '<span class="detail-teacher">'+(cls.teachers||[]).map(t=>teacherSpan(t,cls.subject)).join(', ')+'</span>'+
        '<span class="detail-room clickable cabinet" data-id="'+cls.cabinet+'">'+cls.cabinet+'</span>'+
        '<span class="detail-size">'+cls.size+'</span>'+
        '<span class="detail-part">'+part+'</span>'+
@@ -1397,9 +1437,7 @@ function showTeacher(idx,fromModal=false){
    const s=full.subjects[sid];
    const sname=(configData.subjects[sid]||{}).name||sid;
    html+='<tr><td><span class="clickable subject" data-id="'+sid+'">'+sname+'</span></td><td class="num">'+s.count+'</td><td class="num">'+s.avg+'</td></tr>';});
- html+='</table><h3>Schedule</h3><table class="info-table"><tr><th>Day</th><th>Slot</th><th>Subject</th><th>Size</th><th>Part</th></tr>';
- scheduleData.days.forEach(day=>{day.slots.forEach(sl=>{sl.classes.forEach(cls=>{if((cls.teachers||[]).includes(name)){const subj=(configData.subjects[cls.subject]||{}).name||cls.subject;const part=cls.length>1?(sl.slotIndex-cls.start+1)+'/'+cls.length:'1/1';html+='<tr><td>'+day.name+'</td><td class="num">'+sl.slotIndex+'</td><td><span class="clickable subject" data-id="'+cls.subject+'">'+subj+'</span></td><td class="num">'+cls.size+'</td><td class="num">'+part+'</td></tr>';}});});});
- html+='</table>';
+ html+='</table><h3>Schedule</h3>'+makeGrid(cls=>cls.teachers.includes(name));
  openModal(html,!fromModal);
 }
 
@@ -1421,9 +1459,7 @@ function showStudent(idx,fromModal=false){
   '</table>';
  html+='<h3>Subjects</h3><table class="info-table"><tr><th>Subject</th><th>Classes</th><th>Penalty</th></tr>';
  Object.keys(full.subjects).forEach(sid=>{const s=full.subjects[sid];const sn=(configData.subjects[sid]||{}).name||sid;html+='<tr><td><span class="clickable subject" data-id="'+sid+'">'+sn+'</span></td><td class="num">'+s.count+'</td><td class="num">'+(s.penalty||0).toFixed(1)+'</td></tr>';});
- html+='</table><h3>Schedule</h3><table class="info-table"><tr><th>Day</th><th>Slot</th><th>Subject</th><th>Teacher</th><th>Part</th></tr>';
- scheduleData.days.forEach(day=>{day.slots.forEach(sl=>{sl.classes.forEach(cls=>{if(cls.students.includes(name)){const sn=(configData.subjects[cls.subject]||{}).name||cls.subject;const part=cls.length>1?(sl.slotIndex-cls.start+1)+'/'+cls.length:'1/1';const teach=(cls.teachers||[]).map(t=>'<span class="clickable teacher" data-id="'+teacherIndex[t]+'">'+t+'</span>').join(', ');html+='<tr><td>'+day.name+'</td><td class="num">'+sl.slotIndex+'</td><td><span class="clickable subject" data-id="'+cls.subject+'">'+sn+'</span></td><td>'+teach+'</td><td class="num">'+part+'</td></tr>';}});});});
- html+='</table>';
+ html+='</table><h3>Schedule</h3>'+makeGrid(cls=>cls.students.includes(name));
  openModal(html,!fromModal);
 }
 
@@ -1431,9 +1467,7 @@ function showCabinet(name,fromModal=false){
  const info=configData.cabinets[name]||{};
  let html='<h2>Room: '+name+'</h2>';
  html+='<table class="info-table"><tr><th>Capacity</th><td class="num">'+(info.capacity||'-')+'</td></tr></table>';
- html+='<h3>Schedule</h3><table class="info-table"><tr><th>Day</th><th>Slot</th><th>Subject</th><th>Teacher</th><th>Size</th><th>Part</th></tr>';
- scheduleData.days.forEach(day=>{day.slots.forEach(sl=>{sl.classes.forEach(cls=>{if(cls.cabinet===name){const subj=(configData.subjects[cls.subject]||{}).name||cls.subject;const part=cls.length>1?(sl.slotIndex-cls.start+1)+'/'+cls.length:'1/1';const teach=(cls.teachers||[]).map(t=>'<span class="clickable teacher" data-id="'+teacherIndex[t]+'">'+t+'</span>').join(', ');html+='<tr><td>'+day.name+'</td><td class="num">'+sl.slotIndex+'</td><td><span class="clickable subject" data-id="'+cls.subject+'">'+subj+'</span></td><td>'+teach+'</td><td class="num">'+cls.size+'</td><td class="num">'+part+'</td></tr>';}});});});
- html+='</table>';
+ html+='<h3>Schedule</h3>'+makeGrid(cls=>cls.cabinet===name);
  openModal(html,!fromModal);
 }
 
@@ -1445,13 +1479,11 @@ function showSubject(id,fromModal=false){
   '<tr><th>Classes</th><td>'+((subj.classes||[]).join(', ')||'-')+'</td></tr>'+
   '<tr><th>Optimal slot</th><td class="num">'+(subj.optimalSlot!==undefined?subj.optimalSlot:defOpt)+'</td></tr>'+
   '</table>';
- html+='<h3>Teachers</h3><table class="info-table"><tr><th>Name</th></tr>';
- (configData.teachers||[]).forEach((t,i)=>{if((t.subjects||[]).includes(id)){html+='<tr><td><span class="clickable teacher" data-id="'+i+'">'+t.name+'</span></td></tr>';}});
+html+='<h3>Teachers</h3><table class="info-table"><tr><th>Name</th></tr>';
+(configData.teachers||[]).forEach((t,i)=>{if((t.subjects||[]).includes(id)){const bold=(subj.primaryTeachers||[]).includes(t.name);const nm=bold?'<strong>'+t.name+'</strong>':t.name;html+='<tr><td><span class="clickable teacher" data-id="'+i+'">'+nm+'</span></td></tr>';}});
  html+='</table><h3>Students</h3><table class="info-table"><tr><th>Name</th><th>Group</th></tr>';
  (configData.students||[]).forEach((s,i)=>{if((s.subjects||[]).includes(id)){html+='<tr><td><span class="clickable student" data-id="'+i+'">'+s.name+'</span></td><td class="num">'+(studentSize[s.name]||1)+'</td></tr>';}});
- html+='</table><h3>Schedule</h3><table class="info-table"><tr><th>Day</th><th>Slot</th><th>Teachers</th><th>Size</th><th>Part</th></tr>';
- scheduleData.days.forEach(day=>{day.slots.forEach(sl=>{sl.classes.forEach(cls=>{if(cls.subject===id){const part=cls.length>1?(sl.slotIndex-cls.start+1)+'/'+cls.length:'1/1';const teach=(cls.teachers||[]).map(t=>'<span class="clickable teacher" data-id="'+teacherIndex[t]+'">'+t+'</span>').join(', ');html+='<tr><td>'+day.name+'</td><td class="num">'+sl.slotIndex+'</td><td>'+teach+'</td><td class="num">'+cls.size+'</td><td class="num">'+part+'</td></tr>';}});});});
- html+='</table>';
+html+='</table><h3>Schedule</h3>'+makeGrid(cls=>cls.subject===id);
  openModal(html,!fromModal);
 }
 

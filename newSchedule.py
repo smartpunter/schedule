@@ -6,6 +6,10 @@ from statistics import mean
 from typing import Dict, List, Any, Set
 from ortools.sat.python import cp_model
 
+DEFAULT_MAX_TIME = 10800  # 3 hours
+DEFAULT_SHOW_PROGRESS = True
+DEFAULT_WORKERS = max(os.cpu_count() - 2, 4) if os.cpu_count() else 4
+
 
 def load_config(path: str = "schedule-config.json") -> Dict[str, Any]:
     """Load configuration file and apply defaults."""
@@ -74,6 +78,12 @@ def load_config(path: str = "schedule-config.json") -> Dict[str, Any]:
             }
         )
     data["lessons"] = lessons_parsed
+
+    model_conf = data.get("model", {})
+    model_conf.setdefault("maxTime", DEFAULT_MAX_TIME)
+    model_conf.setdefault("workers", DEFAULT_WORKERS)
+    model_conf.setdefault("showProgress", DEFAULT_SHOW_PROGRESS)
+    data["model"] = model_conf
 
     return data
 
@@ -702,9 +712,18 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
     solver = cp_model.CpSolver()
 
     model_params = cfg.get("model", {})
-    solver.parameters.max_time_in_seconds = model_params.get("maxTime", 300)
-    solver.parameters.num_search_workers = model_params.get("workers", 10)
-    solver.parameters.log_search_progress = model_params.get("showProgress", False)
+    max_time = model_params.get("maxTime", DEFAULT_MAX_TIME)
+    if isinstance(max_time, list):
+        max_time = max_time[0]
+    workers = model_params.get("workers", DEFAULT_WORKERS)
+    if isinstance(workers, list):
+        workers = workers[0]
+    show_progress = model_params.get("showProgress", DEFAULT_SHOW_PROGRESS)
+    if isinstance(show_progress, list):
+        show_progress = show_progress[0]
+    solver.parameters.max_time_in_seconds = max_time
+    solver.parameters.num_search_workers = workers
+    solver.parameters.log_search_progress = show_progress
 
     status = solver.Solve(model)
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
@@ -1769,6 +1788,7 @@ def main() -> None:
 
     cfg_path = args[0] if len(args) >= 1 else "schedule-config.json"
     out_path = args[1] if len(args) >= 2 else "schedule.json"
+    html_path = args[2] if len(args) >= 3 else "schedule.html"
 
     if not os.path.exists(cfg_path):
         print(f"Config '{cfg_path}' not found.")
@@ -1802,8 +1822,8 @@ def main() -> None:
 
     if show_analysis:
         report_analysis(result, cfg)
-        generate_html(result, cfg)
-        print("schedule.html generated")
+        generate_html(result, cfg, html_path)
+        print(f"{html_path} generated")
 
 
 if __name__ == "__main__":

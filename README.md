@@ -1,66 +1,168 @@
 # School Schedule Optimizer
 
-`newSchedule.py` generates an optimal timetable using [Google OR‑Tools](https://developers.google.com/optimization/). The script reads a JSON configuration that describes rooms, teachers, students and subjects, then tries to create the best possible schedule.
+## About the project
+
+This utility creates a timetable for a small school using [Google OR-Tools](https://developers.google.com/optimization/). It reads a JSON configuration that lists subjects, teachers, students and available rooms, then searches for an arrangement of lessons with the smallest penalty score.
+
+**Positives**
+- Flexible data format that covers many real-life constraints
+- Generates both machine readable JSON and an easy HTML timetable
+- Includes analysis tables for teachers and students
+
+**Negatives**
+- Preparing the configuration file takes time
+- Tested only on small data sets; large schools may need tuning
+- Searching for the best schedule can take a long time
 
 ## Quick start
 
-### 1. Install Python
+The following steps assume absolutely no prior experience with the command line.
 
-Download and install **Python 3** from [python.org](https://www.python.org/downloads/) if it is not already available. During installation on Windows check the option *Add Python to PATH*.
+### 1. Download the program
 
-### 2. Install the required package
+1. Open the project page on GitHub and click **Code → Download ZIP**.
+2. Unpack the ZIP to a folder such as **Downloads/schedule** (macOS) or **C:\Users\you\Downloads\schedule** (Windows).
 
-Open **Terminal** on macOS or **Command Prompt** on Windows and install the solver library:
+### 2. Install Python
+
+Download and install **Python 3** from [python.org](https://www.python.org/downloads/). On Windows check **Add Python to PATH** during setup.
+
+### 3. Install OR-Tools
+
+Open a terminal window:
+- **macOS:** open **Finder → Applications → Utilities → Terminal**.
+- **Windows:** press **Win+R**, type `cmd` and press **Enter**.
+
+Run the following command:
 
 ```bash
 pip install ortools
 ```
 
-### 3. Prepare a configuration file
+### 4. Prepare a configuration file
 
-Copy `config-example.json` to `schedule-config.json` and adjust it to match your school. The example shows the structure but is intentionally incomplete. Important blocks are:
+Inside the project folder make a copy of `config-example.json` and name it `schedule-config.json`.
 
-- `settings` – global parameters such as allowed consecutive lessons.
-- `penalties` – weights used when evaluating schedule quality.
-- `days` – list of days and available lesson slots.
-- `cabinets` – available rooms with capacities.
-- `subjects`, `teachers`, `students` – information about who studies or teaches what.
-  Teachers may define `allowedSlots` and/or `forbiddenSlots` to restrict their availability.
-- `lessons` – optional array of fixed lessons `[day, slot, subject, room, [teachers]]`.
-- `model` – solver parameters. `objective` controls optimisation strategy:
-  - `total` (default) minimises the sum of all penalties.
-  - `fair` minimises the largest individual penalty among teachers and students.
+**Editing on macOS**
+1. Open Finder and locate `schedule-config.json`.
+2. Right click the file and choose **Duplicate** if you want an extra backup.
+3. Edit the file with **TextEdit** or the free [Sublime Text](https://www.sublimetext.com/).
+4. Save the file with **⌘S**.
 
-### 4. Run the scheduler
+**Editing on Windows**
+1. Use File Explorer to open the project folder.
+2. Right click `schedule-config.json` and choose **Copy**, then **Paste** to keep a spare copy.
+3. Edit the file with **Notepad**, [Notepad++](https://notepad-plus-plus.org/) or [Sublime Text](https://www.sublimetext.com/).
+4. Use **File → Save** when done.
 
-Execute the script and pass the configuration path. The second argument is where to store the result:
+### 5. Run the scheduler
+
+1. Open Terminal or Command Prompt as described above.
+2. Move to the project directory:
+   - macOS example: `cd ~/Downloads/schedule`
+   - Windows example: `cd %USERPROFILE%\Downloads\schedule`
+3. Check you are in the right place by typing `pwd` on macOS or `cd` on Windows. You should see the path to the folder with `newSchedule.py`.
+4. Start the program with the default file names:
 
 ```bash
-python newSchedule.py schedule-config.json schedule.json
+python newSchedule.py
 ```
 
-After solving, `schedule.json` contains the raw schedule. An interactive HTML view `schedule.html` is also generated so you can browse the timetable in a browser.
+Advanced users can provide three optional parameters: a config file, the JSON output file and the HTML timetable.
+
+```bash
+python newSchedule.py schedule-config.json schedule.json schedule.html
+```
+
+While the solver runs you will see lines similar to
+
+```
+#163   1280.39s best:487960 next:[208710,487950] graph_cst_lns (d=9.26e-01 s=10029 t=0.11 p=0.51 stall=181 h=stalling)
+```
+
+Press **Ctrl+C** to stop early; the best solution so far will be saved. The search is CPU intensive and may run for hours.
+
+## Configuration overview
+
+The configuration file is divided into several sections. Values are stored as `[value, "description"]` pairs. The **settings**, **defaults** and **penalties** blocks are required. The **model** block is optional and should only be changed if you understand the effects.
+
+### settings (required)
+- **maxTeacherSlots** – maximum number of consecutive lessons a teacher can teach. A high number allows long stretches while a low one enforces frequent breaks. *(default 8)*
+- **maxStudentSlots** – maximum consecutive lessons for students. Large numbers mean longer days, small numbers insert more rest. *(default 6)*
+- **objective** – `"total"` minimises the sum of all penalties; `"fair"` tries to distribute penalties evenly. *(default `"total"`)*
+
+### defaults (required)
+- **teacherImportance** – base weight for teachers. Higher values make teacher gaps more costly. *(default 20)*
+- **studentImportance** – base weight for students. Increase to prioritise student convenience. *(default 10)*
+- **optimalSlot** – preferred starting slot when a subject lacks its own. `0` is the first lesson. *(default 0)*
+- **teacherArriveEarly** – if `true`, teachers are present from the first slot even without a lesson. *(default `false`)*
+- **studentArriveEarly** – if `true`, students arrive for slot `0` even when their first lesson is later. *(default `true`)*
+- **permutations** – allow subject classes to be arranged in any order. *(default `true`)*
+- **avoidConsecutive** – discourage placing the same subject on neighbouring days. *(default `true`)*
+
+### penalties (required)
+- **gapTeacher** – penalty for idle teacher slots. High values reduce teacher free time, low values allow it. *(default 2)*
+- **gapStudent** – penalty for gaps in a student day. Raise to keep days compact. *(default 10)*
+- **unoptimalSlot** – penalty for each slot away from a subject's preferred time. Bigger values keep lessons closer to their optimum. *(default 1)*
+- **consecutiveClass** – penalty when the same subject appears on consecutive days. High numbers spread classes apart. *(default 15)*
+
+### days
+List the days of teaching and available lesson numbers:
+```json
+{"name": "Monday", "slots": [0,1,2,3,4]}
+```
+
+### cabinets
+Rooms where classes may take place. Each entry defines a capacity:
+```json
+"Room 101": {"capacity": 20}
+```
+
+### subjects
+Describe each subject with its teachers and lesson structure.
+- `teachers` – teachers who can teach the subject
+- `primaryTeachers` – teachers that must be present
+- `requiredTeachers` – number of teachers needed for each lesson
+- `optimalSlot` – preferred starting slot
+- `classes` – list of lesson lengths that must occur on separate days
+- `allowPermutations` – allow the lesson order to change
+- `avoidConsecutive` – try not to schedule on back-to-back days
+- `cabinets` – rooms where the lesson may take place
+
+### teachers
+Mapping of teacher names to optional settings.
+- `importance` – overrides the default teacher weight
+- `arriveEarly` – whether the teacher is present from slot `0`
+- `allowedSlots` – specific slots when the teacher can work
+- `forbiddenSlots` – slots the teacher cannot work
+
+### students
+List of students with their subjects and optional settings.
+- `group` – number of students if this is a group entry
+- `importance` – overrides the default student weight
+- `arriveEarly` – whether the student arrives from the first slot
+
+### lessons
+Optional fixed lessons specified as `[day, slot, subject, room, [teachers]]` to lock classes to certain times.
+
+### model (optional)
+- `maxTime` – solving time limit in seconds (default three hours). A larger value can improve results but takes longer
+- `workers` – CPU cores to use. By default it uses available cores minus two, but not less than four
+- `showProgress` – `true` to print progress lines during the search (default)
 
 ## Using the results
 
-- **schedule.json** – structured data that can be post‑processed or imported elsewhere.
-- **schedule.html** – open this file in your browser to inspect the timetable. It highlights teachers, students and empty slots.
-- The console output provides a textual summary and optional analysis of teachers, students and subjects.
+- **schedule.json** – machine readable output for further processing
+- **schedule.html** – open in a browser to inspect the timetable with colour coded penalties
 
-## Development notes
+## Changelog
 
-The optimizer was created iteratively while exploring OR‑Tools capabilities. The configuration format was designed to be flexible, allowing arbitrary sets of days, rooms and lesson lengths. `newSchedule.py` also generates human‑readable reports to help understand the computed schedule.
+### 1.1.0
+- Added penalties for consecutive classes and limits on teacher slots
+- Introduced fixed lessons and validation of required teachers
+- Automatic worker detection and improved defaults
+- Expanded documentation with step-by-step instructions
 
-**Strengths**
-
-- Flexible JSON configuration with sensible defaults.
-- Produces both machine‑readable and visual outputs.
-- Includes analysis tables for teachers, students and subjects.
-
-**Weaknesses**
-
-- Configuration file is quite verbose and requires careful preparation.
-- Only lightly tested and may perform slowly on very large data sets.
-- The example configuration is intentionally incomplete and must be edited before use.
-
-Whole project was coded using openAI Codex tool. I do not know neither python, nor optimization models. Still, this thing works extremely well for small private school and this is miracle.
+### 1.0.0
+- Initial schedule generator with JSON configuration and HTML report
+- Basic analysis tables for teachers and students

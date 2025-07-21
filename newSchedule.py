@@ -911,7 +911,7 @@ def render_schedule(schedule: Dict[str, Any], cfg: Dict[str, Any]) -> None:
             home_t = len(home.get("teachers", []))
             home_s = sum(student_size.get(n, 1) for n in home.get("students", []))
 
-            header = f"  Slot {idx} [gap T:{gap_t} S:{gap_s} home T:{home_t} S:{home_s}]"
+            header = f"  Lesson {idx+1} [gap T:{gap_t} S:{gap_s} home T:{home_t} S:{home_s}]"
             if not classes:
                 print(f"{header}: --")
                 continue
@@ -1098,8 +1098,8 @@ function buildTable(){
  container.innerHTML='';
  container.appendChild(document.createElement('div'));
  scheduleData.days.forEach(d=>{const h=document.createElement('div');h.className='header';h.textContent=d.name;container.appendChild(h);});
- for(let i=0;i<maxSlots;i++){
-   const hdr=document.createElement('div');hdr.className='header';hdr.textContent='Slot '+i;container.appendChild(hdr);
+  for(let i=0;i<maxSlots;i++){
+   const hdr=document.createElement('div');hdr.className='header';hdr.textContent='Lesson '+(i+1);container.appendChild(hdr);
    scheduleData.days.forEach(day=>{
      const slot=day.slots.find(s=>s.slotIndex==i) || {classes:[],gaps:{students:[],teachers:[]},home:{students:[],teachers:[]},penalty:{}};
      const cell=document.createElement('div');
@@ -1162,11 +1162,11 @@ cells.forEach(c=>{c.el.style.background=colorFor(c.val);});
 
 function makeGrid(filterFn){
  const maxSlots=Math.max(...scheduleData.days.map(d=>d.slots.length?Math.max(...d.slots.map(s=>s.slotIndex)):0))+1;
- let html='<div class="schedule-grid mini-grid">';
+ let html='<div class="schedule-grid mini-grid" style="grid-template-columns:auto repeat('+scheduleData.days.length+',1fr)">';
  html+='<div></div>';
  scheduleData.days.forEach(d=>{html+='<div class="header">'+d.name+'</div>';});
  for(let i=0;i<maxSlots;i++){
-   html+='<div class="header">Slot '+i+'</div>';
+  html+='<div class="header">Lesson '+(i+1)+'</div>';
    scheduleData.days.forEach(day=>{
      const slot=day.slots.find(s=>s.slotIndex==i)||{classes:[]};
      html+='<div class="cell">';
@@ -1197,7 +1197,7 @@ function showSlot(day,idx,fromModal=false){
  const d=scheduleData.days.find(x=>x.name===day);if(!d)return;
  const slot=d.slots.find(s=>s.slotIndex==idx);if(!slot)return;
  const total=Object.values(slot.penalty||{}).reduce((a,b)=>a+b,0);
- let html='<h2>'+day+' slot '+idx+'</h2><p>Total penalty: '+total.toFixed(1)+'</p>';
+ let html='<h2>'+day+' lesson '+(idx+1)+'</h2><p>Total penalty: '+total.toFixed(1)+'</p>';
  html+='<div class="slot-detail">';
  slot.classes.forEach((cls)=>{
    const subj=(configData.subjects[cls.subject]||{}).name||cls.subject;
@@ -1477,7 +1477,7 @@ function showSubject(id,fromModal=false){
  let html='<h2>Subject: '+(subj.name||id)+'</h2>';
  html+='<table class="info-table">'+
   '<tr><th>Classes</th><td>'+((subj.classes||[]).join(', ')||'-')+'</td></tr>'+
-  '<tr><th>Optimal slot</th><td class="num">'+(subj.optimalSlot!==undefined?subj.optimalSlot:defOpt)+'</td></tr>'+
+  '<tr><th>Optimal lesson</th><td class="num">'+((subj.optimalSlot!==undefined?subj.optimalSlot:defOpt)+1)+'</td></tr>'+
   '</table>';
 html+='<h3>Teachers</h3><table class="info-table"><tr><th>Name</th></tr>';
 (configData.teachers||[]).forEach((t,i)=>{if((t.subjects||[]).includes(id)){const bold=(subj.primaryTeachers||[]).includes(t.name);const nm=bold?'<strong>'+t.name+'</strong>':t.name;html+='<tr><td><span class="clickable teacher" data-id="'+i+'">'+nm+'</span></td></tr>';}});

@@ -1,23 +1,23 @@
 {
   "settings": {
-    "maxTeacherSlots": [8, "Maximum amount of slots in a row, which can be assigned to teacher"],
-    "maxStudentSlots": [6, "Maximum amount of slots in a row, which can be assigned to student"],
-    "objective": ["total", "Optimisation objective: 'total' or 'fair'"]
+    "maxTeacherSlots": [8, "Maximum number of consecutive lessons a teacher can teach. High value allows long stretches, low value forces more breaks."],
+    "maxStudentSlots": [6, "Maximum number of consecutive lessons a student can attend. Large number means longer school days without rest."],
+    "objective": ["total", "Optimisation goal: 'total' minimises all penalties, 'fair' balances penalties between teachers and students."]
   },
   "defaults": {
-    "teacherImportance": [20, "Teacher importance"],
-    "studentImportance": [10, "Student importance"],
-    "optimalSlot": [0, "Optimal slot for subjects with unspecified optimal slot. 0 means first lesson of the day"],
-    "teacherArriveEarly": [false, "Whether a teacher should appear early on morning"],
-    "studentArriveEarly": [true, "Whether a student should appear early on morning"],
-    "permutations": [true, "Allow permutations of subject classes by default"],
-    "avoidConsecutive": [true, "Avoid scheduling subject on consecutive days"]
+    "teacherImportance": [20, "Default teacher weight in penalties. Higher value makes gaps for teachers more expensive."],
+    "studentImportance": [10, "Default student weight. Increase to prioritise student comfort."],
+    "optimalSlot": [0, "Preferred starting slot if a subject does not define its own. 0 means the first lesson of the day."],
+    "teacherArriveEarly": [false, "If true teachers are present from the first slot even without a lesson."],
+    "studentArriveEarly": [true, "If true students arrive at the first slot even without a lesson, causing gap penalties."],
+    "permutations": [true, "Allow subject classes to be reordered across days."],
+    "avoidConsecutive": [true, "Discourage scheduling the same subject on back-to-back days."]
   },
   "penalties": {
-    "gapTeacher": [2, "Penalty for having gap in teacher schedule"],
-    "gapStudent": [10, "Penalty for having gap in student schedule"],
-    "unoptimalSlot": [1, "Penalty for not having subject at optimal slot."],
-    "consecutiveClass": [15, "Penalty for subject occurring on consecutive days"]
+    "gapTeacher": [2, "Penalty per empty slot in a teacher schedule. Higher values reduce teacher idle time."],
+    "gapStudent": [10, "Penalty per empty slot in a student day. Raise to keep days compact."],
+    "unoptimalSlot": [1, "Penalty for each slot away from the preferred time of a subject. Larger value pushes classes toward their optimal slot."],
+    "consecutiveClass": [15, "Penalty when a subject appears on consecutive days. High value spreads classes apart."]
   },
 
   "days": [
@@ -81,9 +81,9 @@
   ],
 
   "model": {
-    "maxTime": 1500,
-    "workers": 10,
-    "showProgress": true
+    "maxTime": [10800, "Maximum solving time in seconds. High value allows thorough search but may take hours."],
+    "workers": [4, "CPU cores to use. By default it is available cores minus two, but at least four."],
+    "showProgress": [true, "Display search progress with the current best score."]
   }
 
 }

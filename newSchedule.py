@@ -455,6 +455,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                 model.Add(class_day_idx[curr_k] > class_day_idx[prev_k])
 
     # teacher, cabinet and student intervals with built-in constraints
+    # store (interval, start, end) tuples to keep bounds handy
     teacher_intervals = {t: defaultdict(list) for t in teacher_names}
     cabinet_intervals = {c: defaultdict(list) for c in cabinets}
     student_intervals = {s: defaultdict(list) for s in student_size}
@@ -462,8 +463,10 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
     for (sid, idx), cand_list in candidates.items():
         for cand in cand_list:
             base_int = cand["interval"]
+            start = cand["start"]
+            end = cand["start"] + cand["length"]
             for stu in cand["students"]:
-                student_intervals[stu][cand["day"]].append(base_int)
+                student_intervals[stu][cand["day"]].append((base_int, start, end))
             for t in allowed_teacher_map[(sid, idx)]:
                 if t not in cand.get("available_teachers", []):
                     model.AddImplication(cand["var"], teacher_choice[(sid, idx, t)].Not())
@@ -475,13 +478,13 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                 model.Add(pres <= teacher_choice[(sid, idx, t)])
                 model.Add(pres >= cand["var"] + teacher_choice[(sid, idx, t)] - 1)
                 interval = model.NewOptionalIntervalVar(
-                    cand["start"],
+                    start,
                     cand["length"],
-                    cand["start"] + cand["length"],
+                    end,
                     pres,
                     f"tint_{sid}_{idx}_{t}_{cand['day']}_{cand['start']}"
                 )
-                teacher_intervals[t][cand["day"]].append(interval)
+                teacher_intervals[t][cand["day"]].append((interval, start, end))
             for cab in cabinets:
                 if (sid, idx, cab) not in cabinet_choice:
                     continue
@@ -504,7 +507,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
     for t, day_map in teacher_intervals.items():
         for ivs in day_map.values():
             if ivs:
-                model.AddNoOverlap(ivs)
+                model.AddNoOverlap([iv[0] for iv in ivs])
     for c, day_map in cabinet_intervals.items():
         for ivs in day_map.values():
             if ivs:
@@ -512,7 +515,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
     for s, day_map in student_intervals.items():
         for ivs in day_map.values():
             if ivs:
-                model.AddNoOverlap(ivs)
+                model.AddNoOverlap([iv[0] for iv in ivs])
 
     # build slot variables for teachers and students based on intervals
     teacher_slot = {}
@@ -522,9 +525,9 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
         for slot in day["slots"]:
             for t in teacher_names:
                 covering = [
-                    iv.PresenceBoolVar()
-                    for iv in teacher_intervals[t].get(dname, [])
-                    if iv.StartExpr().ConstantValue() <= slot < iv.EndExpr().ConstantValue()
+                    info[0].PresenceBoolVar()
+                    for info in teacher_intervals[t].get(dname, [])
+                    if info[1] <= slot < info[2]
                 ]
                 if covering:
                     var = model.NewBoolVar(f"teach_{t}_{dname}_{slot}")
@@ -539,9 +542,9 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
             for stu in students:
                 sname = stu["name"]
                 covering = [
-                    iv.PresenceBoolVar()
-                    for iv in student_intervals.get(sname, {}).get(dname, [])
-                    if iv.StartExpr().ConstantValue() <= slot < iv.EndExpr().ConstantValue()
+                    info[0].PresenceBoolVar()
+                    for info in student_intervals.get(sname, {}).get(dname, [])
+                    if info[1] <= slot < info[2]
                 ]
                 if covering:
                     var = model.NewBoolVar(f"stud_{sname}_{dname}_{slot}")

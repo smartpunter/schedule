@@ -18,6 +18,7 @@ def load_config(path: str = "schedule-config.json") -> Dict[str, Any]:
     default_student_imp = defaults.get("studentImportance", [0])[0]
     default_opt_slot = defaults.get("optimalSlot", [0])[0]
     default_permutations = defaults.get("permutations", [True])[0]
+    default_avoid_consecutive = defaults.get("avoidConsecutive", [True])[0]
     default_teacher_arr = defaults.get("teacherArriveEarly", [False])[0]
     default_student_arr = defaults.get("studentArriveEarly", [True])[0]
 
@@ -47,6 +48,7 @@ def load_config(path: str = "schedule-config.json") -> Dict[str, Any]:
     for sid, subj in data.get("subjects", {}).items():
         subj.setdefault("optimalSlot", default_opt_slot)
         subj.setdefault("allowPermutations", default_permutations)
+        subj.setdefault("avoidConsecutive", default_avoid_consecutive)
         if len(set(subj.get("classes", []))) <= 1:
             subj["allowPermutations"] = False
         if "cabinets" not in subj:
@@ -125,9 +127,11 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
     penalty_val = penalties.get("unoptimalSlot", [0])[0]
     gap_teacher_val = penalties.get("gapTeacher", [0])[0]
     gap_student_val = penalties.get("gapStudent", [0])[0]
+    consecutive_pen_val = penalties.get("consecutiveClass", [0])[0]
     settings = cfg.get("settings", {})
     defaults = cfg.get("defaults", {})
     default_permutations = defaults.get("permutations", [True])[0]
+    default_avoid_consecutive = defaults.get("avoidConsecutive", [True])[0]
     max_teacher_slots = settings.get("maxTeacherSlots", [0])[0]
     max_student_slots = settings.get("maxStudentSlots", [0])[0]
     default_student_imp = defaults.get("studentImportance", [0])[0]
@@ -148,6 +152,10 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
     teacher_choice: Dict[tuple, cp_model.BoolVar] = {}
     cabinet_choice: Dict[tuple, cp_model.BoolVar] = {}
     allowed_teacher_map: Dict[tuple, List[str]] = {}
+    avoid_map = {
+        sid: subj.get("avoidConsecutive", default_avoid_consecutive)
+        for sid, subj in subjects.items()
+    }
     # helper mapping for allowed teacher/cabinet choices
     teacher_index = {name: i for i, name in enumerate(teacher_names)}
     cabinet_index = {name: i for i, name in enumerate(cabinets)}
@@ -467,6 +475,28 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                         <= max_student_slots
                     )
 
+    # penalties for consecutive days of the same subject
+    consecutive_vars = []
+    for sid, subj in subjects.items():
+        if not avoid_map.get(sid, True):
+            continue
+        count = len(subj["classes"])
+        if count <= 1:
+            continue
+        for j in range(count):
+            pair_vars = []
+            for i in range(count):
+                if i == j:
+                    continue
+                var = model.NewBoolVar(f"cons_{sid}_{i}_{j}")
+                model.Add(class_day_idx[(sid, j)] == class_day_idx[(sid, i)] + 1).OnlyEnforceIf(var)
+                model.Add(class_day_idx[(sid, j)] != class_day_idx[(sid, i)] + 1).OnlyEnforceIf(var.Not())
+                pair_vars.append(var)
+            if pair_vars:
+                any_v = model.NewBoolVar(f"cons_any_{sid}_{j}")
+                model.AddMaxEquality(any_v, pair_vars)
+                consecutive_vars.append(any_v)
+
     # objective
     model_params = cfg.get("model", {})
     obj_mode = settings.get("objective", ["total"])[0]
@@ -494,11 +524,14 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
         for s in student_importance
     }
 
+    consecutive_expr = consecutive_pen_val * sum(consecutive_vars) if consecutive_vars else 0
+
     if obj_mode == "total":
         total_expr = (
             sum(teacher_gap_exprs.values())
             + sum(student_gap_exprs.values())
             + sum(student_unopt_exprs.values())
+            + consecutive_expr
         )
         model.Minimize(total_expr)
     else:
@@ -511,12 +544,15 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
             * gap_student_val
             * max(student_importance.values() or [0])
             * max(student_size.values() or [1])
+            + len(consecutive_vars) * consecutive_pen_val
         )
         max_pen = model.NewIntVar(0, int(approx_bound + 1), "maxPenalty")
         for expr in teacher_gap_exprs.values():
             model.Add(expr <= max_pen)
         for s in student_importance:
             model.Add(student_gap_exprs[s] + student_unopt_exprs[s] <= max_pen)
+        if consecutive_vars:
+            model.Add(consecutive_expr <= max_pen)
         model.Minimize(max_pen)
 
     solver = cp_model.CpSolver()
@@ -706,6 +742,35 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
                     )
                     slot_penalties[dname][slot]["unoptimalSlot"] += p
                     slot_penalty_details[dname][slot].append({"name": sname, "type": "unoptimalSlot", "amount": p})
+
+    # penalties for consecutive classes
+    avoid_default = defaults.get("avoidConsecutive", [True])[0]
+    avoid_map = {
+        sid: cfg["subjects"][sid].get("avoidConsecutive", avoid_default)
+        for sid in cfg["subjects"]
+    }
+    day_index = {day["name"]: idx for idx, day in enumerate(cfg["days"])}
+    subj_occurrence = defaultdict(list)
+    for day in cfg["days"]:
+        dname = day["name"]
+        d_idx = day_index[dname]
+        for slot in day["slots"]:
+            for cls in schedule[dname][slot]:
+                if slot != cls["start"]:
+                    continue
+                sid = cls["subject"]
+                subj_occurrence[sid].append((d_idx, dname, slot))
+    for sid, occ in subj_occurrence.items():
+        if not avoid_map.get(sid, True):
+            continue
+        occ.sort()
+        for i in range(1, len(occ)):
+            prev_idx = occ[i - 1][0]
+            cur_idx, dname, slot = occ[i]
+            if cur_idx == prev_idx + 1:
+                p = penalties_cfg.get("consecutiveClass", 0)
+                slot_penalties[dname][slot]["consecutiveClass"] += p
+                slot_penalty_details[dname][slot].append({"name": sid, "type": "consecutiveClass", "amount": p})
 
     total_penalty = 0
     for day_map in slot_penalties.values():

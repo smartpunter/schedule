@@ -10,12 +10,14 @@
     "optimalSlot": [0, "Optimal slot for subjects with unspecified optimal slot. 0 means first lesson of the day"],
     "teacherArriveEarly": [false, "Whether a teacher should appear early on morning"],
     "studentArriveEarly": [true, "Whether a student should appear early on morning"],
-    "permutations": [true, "Allow permutations of subject classes by default"]
+    "permutations": [true, "Allow permutations of subject classes by default"],
+    "avoidConsecutive": [true, "Avoid scheduling subject on consecutive days"]
   },
   "penalties": {
     "gapTeacher": [2, "Penalty for having gap in teacher schedule"],
     "gapStudent": [10, "Penalty for having gap in student schedule"],
-    "unoptimalSlot": [1, "Penalty for not having subject at optimal slot."]
+    "unoptimalSlot": [1, "Penalty for not having subject at optimal slot."],
+    "consecutiveClass": [15, "Penalty for subject occurring on consecutive days"]
   },
 
   "days": [

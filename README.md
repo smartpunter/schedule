@@ -26,6 +26,7 @@ Copy `config-example.json` to `schedule-config.json` and adjust it to match your
 - `cabinets` – available rooms with capacities.
 - `subjects`, `teachers`, `students` – information about who studies or teaches what.
   Teachers may define `allowedSlots` and/or `forbiddenSlots` to restrict their availability.
+- `lessons` – optional array of fixed lessons `[day, slot, subject, room, [teachers]]`.
 - `model` – solver parameters. `objective` controls optimisation strategy:
   - `total` (default) minimises the sum of all penalties.
   - `fair` minimises the largest individual penalty among teachers and students.

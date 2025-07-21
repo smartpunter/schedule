@@ -59,6 +59,22 @@ def load_config(path: str = "schedule-config.json") -> Dict[str, Any]:
             if tname in teacher_lookup:
                 teacher_lookup[tname].setdefault("subjects", []).append(sid)
 
+    lessons_parsed = []
+    for item in data.get("lessons", []):
+        if not isinstance(item, list) or len(item) < 5:
+            raise ValueError("Lesson entry must contain day, slot, subject, cabinet and teachers")
+        day, slot, subject_id, cabinet, teachers = item
+        lessons_parsed.append(
+            {
+                "day": day,
+                "slot": int(slot),
+                "subject": subject_id,
+                "cabinet": cabinet,
+                "teachers": list(teachers),
+            }
+        )
+    data["lessons"] = lessons_parsed
+
     return data
 
 
@@ -69,6 +85,88 @@ def _init_schedule(days: List[Dict[str, Any]]) -> Dict[str, Dict[int, List[Dict[
         name = day["name"]
         schedule[name] = {slot: [] for slot in day["slots"]}
     return schedule
+
+
+def _prepare_fixed_classes(
+    cfg: Dict[str, Any],
+    teacher_limits: Dict[str, Dict[str, Set[int]]],
+    teacher_map: Dict[str, Set[str]],
+    students_by_subject: Dict[str, List[str]],
+    student_size: Dict[str, int],
+) -> Dict[tuple, Dict[str, Any]]:
+    """Validate and convert fixed lessons configuration."""
+    lessons = cfg.get("lessons", [])
+    if not lessons:
+        return {}
+
+    day_lookup = {d["name"]: set(d["slots"]) for d in cfg["days"]}
+    day_index = {d["name"]: idx for idx, d in enumerate(cfg["days"])}
+    cabinets = cfg.get("cabinets", {})
+    subjects = cfg["subjects"]
+
+    used_idx: Dict[str, int] = defaultdict(int)
+    fixed: Dict[tuple, Dict[str, Any]] = {}
+    for entry in lessons:
+        day = entry["day"]
+        slot = int(entry["slot"])
+        sid = entry["subject"]
+        room = entry["cabinet"]
+        tlist = entry["teachers"]
+
+        if day not in day_lookup:
+            raise ValueError(f"Unknown day '{day}' in lesson {entry}")
+        if slot not in day_lookup[day]:
+            raise ValueError(f"Slot {slot} not available on {day}")
+        if sid not in subjects:
+            raise ValueError(f"Unknown subject '{sid}' in lesson {entry}")
+        subj = subjects[sid]
+
+        idx = used_idx[sid]
+        if idx >= len(subj.get("classes", [])):
+            raise ValueError(f"Too many fixed lessons for subject {sid}")
+        length = subj["classes"][idx]
+        last_slot = max(day_lookup[day])
+        if slot + length - 1 > last_slot:
+            raise ValueError(
+                f"Lesson for {sid} starting at {day} slot {slot} exceeds day length"
+            )
+
+        if room not in cabinets:
+            raise ValueError(f"Unknown cabinet '{room}' in lesson {entry}")
+        if room not in subj.get("cabinets", list(cabinets)):
+            raise ValueError(f"Cabinet '{room}' not allowed for subject {sid}")
+
+        class_size = sum(student_size[s] for s in students_by_subject.get(sid, []))
+        if cabinets[room]["capacity"] < class_size:
+            raise ValueError(
+                f"Cabinet '{room}' too small for subject {sid} (size {class_size})"
+            )
+
+        required = int(subj.get("requiredTeachers", 1))
+        if len(tlist) != required:
+            raise ValueError(
+                f"Subject {sid} requires {required} teachers, got {len(tlist)}"
+            )
+
+        for t in tlist:
+            if t not in teacher_map or sid not in teacher_map[t]:
+                raise ValueError(f"Teacher {t} cannot teach subject {sid}")
+            if slot not in teacher_limits[t][day]:
+                raise ValueError(
+                    f"Teacher {t} not available at {day} slot {slot} for subject {sid}"
+                )
+
+        fixed[(sid, idx)] = {
+            "day": day,
+            "day_idx": day_index[day],
+            "start": slot,
+            "length": length,
+            "cabinet": room,
+            "teachers": tlist,
+        }
+        used_idx[sid] += 1
+
+    return fixed
 
 
 def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]]]:
@@ -122,6 +220,10 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
         for sid in stu["subjects"]:
             students_by_subject.setdefault(sid, []).append(name)
 
+    fixed_classes = _prepare_fixed_classes(
+        cfg, teacher_limits, teacher_map, students_by_subject, student_size
+    )
+
     model = cp_model.CpModel()
     penalties = cfg.get("penalties", {})
     penalty_val = penalties.get("unoptimalSlot", [0])[0]
@@ -171,50 +273,72 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
 
         for idx, length in enumerate(class_lengths):
             key = (sid, idx)
+            fixed = fixed_classes.get(key)
             cand_list = []
-            for day_idx, day in enumerate(days):
-                dname = day["name"]
-                slots = day["slots"]
-                required = int(subj.get("requiredTeachers", 1))
-                for start in slots:
-                    if start + length - 1 > slots[-1]:
-                        continue
-                    available = [
-                        t
-                        for t in allowed_teachers
-                        if all(
-                            s in teacher_limits[t][dname]
-                            for s in range(start, start + length)
-                        )
-                    ]
-                    if len(available) < required:
-                        continue
-                    var = model.NewBoolVar(f"x_{sid}_{idx}_{dname}_{start}")
-                    diff = abs(start - subj.get("optimalSlot", 0))
-                    stud_pen = sum(
-                        student_importance[s] * student_size[s]
-                        for s in enrolled
-                    )
-                    stud_pen_map = {
-                        s: diff
-                        * penalty_val
-                        * student_importance[s]
-                        * student_size[s]
-                        for s in enrolled
+            if fixed is not None:
+                var = model.NewBoolVar(f"x_{sid}_{idx}_{fixed['day']}_{fixed['start']}")
+                model.Add(var == 1)
+                diff = abs(fixed["start"] - subj.get("optimalSlot", 0))
+                stud_pen_map = {
+                    s: diff
+                    * penalty_val
+                    * student_importance[s]
+                    * student_size[s]
+                    for s in enrolled
+                }
+                cand_list.append(
+                    {
+                        "var": var,
+                        "day": fixed["day"],
+                        "day_idx": fixed["day_idx"],
+                        "start": fixed["start"],
+                        "length": length,
+                        "size": class_size,
+                        "students": enrolled,
+                        "student_pen": stud_pen_map,
+                        "penalty": sum(stud_pen_map.values()),
                     }
-                    cand_list.append(
-                        {
-                            "var": var,
-                            "day": dname,
-                            "day_idx": day_idx,
-                            "start": start,
-                            "length": length,
-                            "size": class_size,
-                            "students": enrolled,
-                            "student_pen": stud_pen_map,
-                            "penalty": sum(stud_pen_map.values()),
+                )
+            else:
+                for day_idx, day in enumerate(days):
+                    dname = day["name"]
+                    slots = day["slots"]
+                    required = int(subj.get("requiredTeachers", 1))
+                    for start in slots:
+                        if start + length - 1 > slots[-1]:
+                            continue
+                        available = [
+                            t
+                            for t in allowed_teachers
+                            if all(
+                                s in teacher_limits[t][dname]
+                                for s in range(start, start + length)
+                            )
+                        ]
+                        if len(available) < required:
+                            continue
+                        var = model.NewBoolVar(f"x_{sid}_{idx}_{dname}_{start}")
+                        diff = abs(start - subj.get("optimalSlot", 0))
+                        stud_pen_map = {
+                            s: diff
+                            * penalty_val
+                            * student_importance[s]
+                            * student_size[s]
+                            for s in enrolled
                         }
-                    )
+                        cand_list.append(
+                            {
+                                "var": var,
+                                "day": dname,
+                                "day_idx": day_idx,
+                                "start": start,
+                                "length": length,
+                                "size": class_size,
+                                "students": enrolled,
+                                "student_pen": stud_pen_map,
+                                "penalty": sum(stud_pen_map.values()),
+                            }
+                        )
             if not cand_list:
                 raise RuntimeError(f"No slot for subject {sid} class {idx}")
             model.Add(sum(c["var"] for c in cand_list) == 1)
@@ -226,7 +350,12 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
             tv_list = []
             for t in allowed_teachers:
                 tv = model.NewBoolVar(f"is_{sid}_{idx}_teacher_{t}")
-                if t in primary:
+                if fixed is not None:
+                    if t in fixed["teachers"]:
+                        model.Add(tv == 1)
+                    else:
+                        model.Add(tv == 0)
+                elif t in primary:
                     model.Add(tv == 1)
                 teacher_choice[(sid, idx, t)] = tv
                 tv_list.append(tv)
@@ -248,9 +377,17 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                 if cabinets[c]["capacity"] < class_size:
                     continue
                 cv = model.NewBoolVar(f"is_{sid}_{idx}_cab_{c}")
-                model.Add(class_cabinet[key] == cabinet_index[c]).OnlyEnforceIf(cv)
-                model.Add(class_cabinet[key] != cabinet_index[c]).OnlyEnforceIf(cv.Not())
+                if fixed is not None:
+                    if c == fixed["cabinet"]:
+                        model.Add(cv == 1)
+                    else:
+                        model.Add(cv == 0)
+                else:
+                    model.Add(class_cabinet[key] == cabinet_index[c]).OnlyEnforceIf(cv)
+                    model.Add(class_cabinet[key] != cabinet_index[c]).OnlyEnforceIf(cv.Not())
                 cabinet_choice[(sid, idx, c)] = cv
+            if fixed is not None:
+                model.Add(class_cabinet[key] == cabinet_index[fixed["cabinet"]])
             candidates[key] = cand_list
 
     # at most one class of same subject per day

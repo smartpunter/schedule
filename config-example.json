@@ -76,6 +76,10 @@
       "subjects": ["DP1_English_Literature_SL", "DP1_Mathematics_SL", "DP1_Chemistry_SL" ] }
   ],
 
+  "lessons": [
+    ["Monday", 1, "DP1_English_Literature_SL", "Room #002", ["Marie", "Jane"]]
+  ],
+
   "model": {
     "maxTime": 1500,
     "workers": 10,

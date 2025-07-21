@@ -51,6 +51,8 @@ def load_config(path: str = "schedule-config.json") -> Dict[str, Any]:
             subj["allowPermutations"] = False
         if "cabinets" not in subj:
             subj["cabinets"] = list(data.get("cabinets", {}))
+        subj.setdefault("primaryTeachers", [])
+        subj.setdefault("requiredTeachers", 1)
         for tname in subj.get("teachers", []):
             if tname in teacher_lookup:
                 teacher_lookup[tname].setdefault("subjects", []).append(sid)
@@ -115,10 +117,10 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
     # chosen day index for each class
     class_day_idx: Dict[tuple, cp_model.IntVar] = {}
     # teacher and cabinet selections for every class
-    class_teacher: Dict[tuple, cp_model.IntVar] = {}
     class_cabinet: Dict[tuple, cp_model.IntVar] = {}
     teacher_choice: Dict[tuple, cp_model.BoolVar] = {}
     cabinet_choice: Dict[tuple, cp_model.BoolVar] = {}
+    allowed_teacher_map: Dict[tuple, List[str]] = {}
     # helper mapping for allowed teacher/cabinet choices
     teacher_index = {name: i for i, name in enumerate(teacher_names)}
     cabinet_index = {name: i for i, name in enumerate(cabinets)}
@@ -173,17 +175,18 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
             day_var = model.NewIntVar(0, len(days) - 1, f"day_idx_{sid}_{idx}")
             model.Add(day_var == sum(c["day_idx"] * c["var"] for c in cand_list))
             class_day_idx[key] = day_var
-            teacher_domain = [teacher_index[t] for t in allowed_teachers]
-            class_teacher[key] = model.NewIntVarFromDomain(
-                cp_model.Domain.FromValues(teacher_domain),
-                f"teacher_{sid}_{idx}",
-            )
-            # helper booleans for chosen teacher
+            required = int(subj.get("requiredTeachers", 1))
+            primary = set(subj.get("primaryTeachers", []))
+            tv_list = []
             for t in allowed_teachers:
                 tv = model.NewBoolVar(f"is_{sid}_{idx}_teacher_{t}")
-                model.Add(class_teacher[key] == teacher_index[t]).OnlyEnforceIf(tv)
-                model.Add(class_teacher[key] != teacher_index[t]).OnlyEnforceIf(tv.Not())
+                if t in primary:
+                    model.Add(tv == 1)
                 teacher_choice[(sid, idx, t)] = tv
+                tv_list.append(tv)
+            if tv_list:
+                model.Add(sum(tv_list) == required)
+            allowed_teacher_map[key] = allowed_teachers
             cab_domain = [
                 cabinet_index[c]
                 for c in allowed_cabinets
@@ -486,17 +489,20 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
 
     schedule = _init_schedule(days)
     for (sid, idx), cand_list in candidates.items():
-        teach_idx = solver.Value(class_teacher[(sid, idx)])
         cab_idx = solver.Value(class_cabinet[(sid, idx)])
-        teacher_name = teacher_names[teach_idx]
         cabinet_name = list(cabinets.keys())[cab_idx]
+        assigned_teachers = [
+            t
+            for t in allowed_teacher_map[(sid, idx)]
+            if solver.Value(teacher_choice[(sid, idx, t)])
+        ]
         for c in cand_list:
             if solver.Value(c["var"]):
                 for s in range(c["start"], c["start"] + c["length"]):
                     schedule[c["day"]][s].append(
                         {
                             "subject": sid,
-                            "teacher": teacher_name,
+                            "teachers": assigned_teachers,
                             "cabinet": cabinet_name,
                             "students": c["students"],
                             "size": c["size"],
@@ -530,7 +536,8 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
         name = day["name"]
         for slot in day["slots"]:
             for cls in schedule[name][slot]:
-                teacher_slots[cls["teacher"]][name].add(slot)
+                for t in cls.get("teachers", []):
+                    teacher_slots[t][name].add(slot)
                 for stu in cls["students"]:
                     student_slots[stu][name].add(slot)
 
@@ -694,12 +701,12 @@ def analyse_teachers(schedule: Dict[str, Any]) -> Dict[str, Any]:
     for day in schedule.get("days", []):
         for slot in day.get("slots", []):
             for cls in slot.get("classes", []):
-                tid = cls["teacher"]
                 sid = cls["subject"]
                 count = cls.get("size", len(cls.get("students", [])))
-                teachers[tid]["blocks"] += 1
-                teachers[tid]["students"].append(count)
-                teachers[tid]["subjects"][sid].append(count)
+                for tid in cls.get("teachers", []):
+                    teachers[tid]["blocks"] += 1
+                    teachers[tid]["students"].append(count)
+                    teachers[tid]["subjects"][sid].append(count)
     return teachers
 
 
@@ -725,7 +732,8 @@ def analyse_subjects(schedule: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str,
         for slot in day.get("slots", []):
             for cls in slot.get("classes", []):
                 sid = cls["subject"]
-                subjects[sid]["teachers"].add(cls["teacher"])
+                for tid in cls.get("teachers", []):
+                    subjects[sid]["teachers"].add(tid)
                 subjects[sid]["class_sizes"].append(
                     cls.get("size", len(cls.get("students", [])))
                 )
@@ -910,7 +918,7 @@ def render_schedule(schedule: Dict[str, Any], cfg: Dict[str, Any]) -> None:
             print(f"{header}:")
             for cls in classes:
                 subj = subject_names.get(cls["subject"], cls["subject"])
-                teacher = cls["teacher"]
+                teacher = ", ".join(cls.get("teachers", []))
                 size = cls.get("size", len(cls.get("students", [])))
                 length = cls.get("length", 1)
                 start = cls.get("start", idx)
@@ -1103,7 +1111,8 @@ function buildTable(){
         '<span class="cls-part">'+part+'</span>';
        const l2=document.createElement('div');
        l2.className='class-line';
-       l2.innerHTML='<span class="cls-teach clickable teacher" data-id="'+teacherIndex[cls.teacher]+'">'+cls.teacher+'</span>'+
+       const tNames=(cls.teachers||[]).map(t=>'<span class="clickable teacher" data-id="'+teacherIndex[t]+'">'+t+'</span>').join(', ');
+       l2.innerHTML='<span class="cls-teach">'+tNames+'</span>'+
         '<span class="cls-size">'+cls.size+'</span>';
        block.appendChild(l1);block.appendChild(l2);
        cell.appendChild(block);
@@ -1156,7 +1165,7 @@ function showSlot(day,idx,fromModal=false){
    html+='<div class="slot-class">'+
      '<div class="detail-line">'+
        '<span class="detail-subj clickable subject" data-id="'+cls.subject+'">'+subj+'</span>'+
-       '<span class="detail-teacher clickable teacher" data-id="'+teacherIndex[cls.teacher]+'">'+cls.teacher+'</span>'+
+       '<span class="detail-teacher">'+(cls.teachers||[]).map(t=>'<span class="clickable teacher" data-id="'+teacherIndex[t]+'">'+t+'</span>').join(', ')+'</span>'+
        '<span class="detail-room clickable cabinet" data-id="'+cls.cabinet+'">'+cls.cabinet+'</span>'+
        '<span class="detail-size">'+cls.size+'</span>'+
        '<span class="detail-part">'+part+'</span>'+
@@ -1204,13 +1213,13 @@ function computeTeacherStats(name){
  scheduleData.days.forEach(day=>{
    const slots=day.slots;
    const dayStart=slots.length?slots[0].slotIndex:0;
-   const teachSlots=slots.filter(sl=>sl.classes.some(c=>c.teacher===name));
+   const teachSlots=slots.filter(sl=>sl.classes.some(c=>(c.teachers||[]).includes(name)));
    if(teachSlots.length){
      const firstClass=teachSlots[0].slotIndex;
      const first=arrive?dayStart:firstClass;
      const last=teachSlots[teachSlots.length-1].slotIndex;
      time+=last-first+1;
-     teachSlots.forEach(sl=>{const c=sl.classes.find(x=>x.teacher===name);sizes.push(c.size);total++;});
+     teachSlots.forEach(sl=>{const c=sl.classes.find(x=>(x.teachers||[]).includes(name));sizes.push(c.size);total++;});
      for(const sl of slots){if(sl.slotIndex>=first&&sl.slotIndex<=last){if(sl.gaps.teachers.includes(name))gap++;}}
    }
   });
@@ -1246,14 +1255,14 @@ function computeTeacherInfo(name){
  scheduleData.days.forEach(day=>{
    const slots=day.slots;
    const dayStart=slots.length?slots[0].slotIndex:0;
-   const teachSlots=slots.filter(sl=>sl.classes.some(c=>c.teacher===name));
+   const teachSlots=slots.filter(sl=>sl.classes.some(c=>(c.teachers||[]).includes(name)));
    if(teachSlots.length){
      const first=arrive?dayStart:teachSlots[0].slotIndex;
      const last=teachSlots[teachSlots.length-1].slotIndex;
      time+=last-first+1;
      for(const sl of slots){if(sl.slotIndex>=first&&sl.slotIndex<=last){if(sl.gaps.teachers.includes(name))gap++;}}
      teachSlots.forEach(sl=>{
-       const cls=sl.classes.find(c=>c.teacher===name);
+       const cls=sl.classes.find(c=>(c.teachers||[]).includes(name));
        hours++;
        const stat=subjects[cls.subject]||{count:0,size:0};
        stat.count++;stat.size+=cls.size;subjects[cls.subject]=stat;
@@ -1389,7 +1398,7 @@ function showTeacher(idx,fromModal=false){
    const sname=(configData.subjects[sid]||{}).name||sid;
    html+='<tr><td><span class="clickable subject" data-id="'+sid+'">'+sname+'</span></td><td class="num">'+s.count+'</td><td class="num">'+s.avg+'</td></tr>';});
  html+='</table><h3>Schedule</h3><table class="info-table"><tr><th>Day</th><th>Slot</th><th>Subject</th><th>Size</th><th>Part</th></tr>';
- scheduleData.days.forEach(day=>{day.slots.forEach(sl=>{sl.classes.forEach(cls=>{if(cls.teacher===name){const subj=(configData.subjects[cls.subject]||{}).name||cls.subject;const part=cls.length>1?(sl.slotIndex-cls.start+1)+'/'+cls.length:'1/1';html+='<tr><td>'+day.name+'</td><td class="num">'+sl.slotIndex+'</td><td><span class="clickable subject" data-id="'+cls.subject+'">'+subj+'</span></td><td class="num">'+cls.size+'</td><td class="num">'+part+'</td></tr>';}});});});
+ scheduleData.days.forEach(day=>{day.slots.forEach(sl=>{sl.classes.forEach(cls=>{if((cls.teachers||[]).includes(name)){const subj=(configData.subjects[cls.subject]||{}).name||cls.subject;const part=cls.length>1?(sl.slotIndex-cls.start+1)+'/'+cls.length:'1/1';html+='<tr><td>'+day.name+'</td><td class="num">'+sl.slotIndex+'</td><td><span class="clickable subject" data-id="'+cls.subject+'">'+subj+'</span></td><td class="num">'+cls.size+'</td><td class="num">'+part+'</td></tr>';}});});});
  html+='</table>';
  openModal(html,!fromModal);
 }
@@ -1413,7 +1422,7 @@ function showStudent(idx,fromModal=false){
  html+='<h3>Subjects</h3><table class="info-table"><tr><th>Subject</th><th>Classes</th><th>Penalty</th></tr>';
  Object.keys(full.subjects).forEach(sid=>{const s=full.subjects[sid];const sn=(configData.subjects[sid]||{}).name||sid;html+='<tr><td><span class="clickable subject" data-id="'+sid+'">'+sn+'</span></td><td class="num">'+s.count+'</td><td class="num">'+(s.penalty||0).toFixed(1)+'</td></tr>';});
  html+='</table><h3>Schedule</h3><table class="info-table"><tr><th>Day</th><th>Slot</th><th>Subject</th><th>Teacher</th><th>Part</th></tr>';
- scheduleData.days.forEach(day=>{day.slots.forEach(sl=>{sl.classes.forEach(cls=>{if(cls.students.includes(name)){const sn=(configData.subjects[cls.subject]||{}).name||cls.subject;const part=cls.length>1?(sl.slotIndex-cls.start+1)+'/'+cls.length:'1/1';html+='<tr><td>'+day.name+'</td><td class="num">'+sl.slotIndex+'</td><td><span class="clickable subject" data-id="'+cls.subject+'">'+sn+'</span></td><td><span class="clickable teacher" data-id="'+teacherIndex[cls.teacher]+'">'+cls.teacher+'</span></td><td class="num">'+part+'</td></tr>';}});});});
+ scheduleData.days.forEach(day=>{day.slots.forEach(sl=>{sl.classes.forEach(cls=>{if(cls.students.includes(name)){const sn=(configData.subjects[cls.subject]||{}).name||cls.subject;const part=cls.length>1?(sl.slotIndex-cls.start+1)+'/'+cls.length:'1/1';const teach=(cls.teachers||[]).map(t=>'<span class="clickable teacher" data-id="'+teacherIndex[t]+'">'+t+'</span>').join(', ');html+='<tr><td>'+day.name+'</td><td class="num">'+sl.slotIndex+'</td><td><span class="clickable subject" data-id="'+cls.subject+'">'+sn+'</span></td><td>'+teach+'</td><td class="num">'+part+'</td></tr>';}});});});
  html+='</table>';
  openModal(html,!fromModal);
 }
@@ -1423,7 +1432,7 @@ function showCabinet(name,fromModal=false){
  let html='<h2>Room: '+name+'</h2>';
  html+='<table class="info-table"><tr><th>Capacity</th><td class="num">'+(info.capacity||'-')+'</td></tr></table>';
  html+='<h3>Schedule</h3><table class="info-table"><tr><th>Day</th><th>Slot</th><th>Subject</th><th>Teacher</th><th>Size</th><th>Part</th></tr>';
- scheduleData.days.forEach(day=>{day.slots.forEach(sl=>{sl.classes.forEach(cls=>{if(cls.cabinet===name){const subj=(configData.subjects[cls.subject]||{}).name||cls.subject;const part=cls.length>1?(sl.slotIndex-cls.start+1)+'/'+cls.length:'1/1';html+='<tr><td>'+day.name+'</td><td class="num">'+sl.slotIndex+'</td><td><span class="clickable subject" data-id="'+cls.subject+'">'+subj+'</span></td><td><span class="clickable teacher" data-id="'+teacherIndex[cls.teacher]+'">'+cls.teacher+'</span></td><td class="num">'+cls.size+'</td><td class="num">'+part+'</td></tr>';}});});});
+ scheduleData.days.forEach(day=>{day.slots.forEach(sl=>{sl.classes.forEach(cls=>{if(cls.cabinet===name){const subj=(configData.subjects[cls.subject]||{}).name||cls.subject;const part=cls.length>1?(sl.slotIndex-cls.start+1)+'/'+cls.length:'1/1';const teach=(cls.teachers||[]).map(t=>'<span class="clickable teacher" data-id="'+teacherIndex[t]+'">'+t+'</span>').join(', ');html+='<tr><td>'+day.name+'</td><td class="num">'+sl.slotIndex+'</td><td><span class="clickable subject" data-id="'+cls.subject+'">'+subj+'</span></td><td>'+teach+'</td><td class="num">'+cls.size+'</td><td class="num">'+part+'</td></tr>';}});});});
  html+='</table>';
  openModal(html,!fromModal);
 }
@@ -1440,8 +1449,8 @@ function showSubject(id,fromModal=false){
  (configData.teachers||[]).forEach((t,i)=>{if((t.subjects||[]).includes(id)){html+='<tr><td><span class="clickable teacher" data-id="'+i+'">'+t.name+'</span></td></tr>';}});
  html+='</table><h3>Students</h3><table class="info-table"><tr><th>Name</th><th>Group</th></tr>';
  (configData.students||[]).forEach((s,i)=>{if((s.subjects||[]).includes(id)){html+='<tr><td><span class="clickable student" data-id="'+i+'">'+s.name+'</span></td><td class="num">'+(studentSize[s.name]||1)+'</td></tr>';}});
- html+='</table><h3>Schedule</h3><table class="info-table"><tr><th>Day</th><th>Slot</th><th>Teacher</th><th>Size</th><th>Part</th></tr>';
- scheduleData.days.forEach(day=>{day.slots.forEach(sl=>{sl.classes.forEach(cls=>{if(cls.subject===id){const part=cls.length>1?(sl.slotIndex-cls.start+1)+'/'+cls.length:'1/1';html+='<tr><td>'+day.name+'</td><td class="num">'+sl.slotIndex+'</td><td><span class="clickable teacher" data-id="'+teacherIndex[cls.teacher]+'">'+cls.teacher+'</span></td><td class="num">'+cls.size+'</td><td class="num">'+part+'</td></tr>';}});});});
+ html+='</table><h3>Schedule</h3><table class="info-table"><tr><th>Day</th><th>Slot</th><th>Teachers</th><th>Size</th><th>Part</th></tr>';
+ scheduleData.days.forEach(day=>{day.slots.forEach(sl=>{sl.classes.forEach(cls=>{if(cls.subject===id){const part=cls.length>1?(sl.slotIndex-cls.start+1)+'/'+cls.length:'1/1';const teach=(cls.teachers||[]).map(t=>'<span class="clickable teacher" data-id="'+teacherIndex[t]+'">'+t+'</span>').join(', ');html+='<tr><td>'+day.name+'</td><td class="num">'+sl.slotIndex+'</td><td>'+teach+'</td><td class="num">'+cls.size+'</td><td class="num">'+part+'</td></tr>';}});});});
  html+='</table>';
  openModal(html,!fromModal);
 }

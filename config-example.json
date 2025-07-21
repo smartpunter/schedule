@@ -34,20 +34,23 @@
   },
 
   "subjects": {
-    "DP1_English_Literature_SL": { "teachers": ["Marie"], "optimalSlot": 4, "classes": [2, 1], "allowPermutations": false, "cabinets": ["Room #001", "Room #002"], "comment": "Literary analysis benefits from stabilized verbal processing later in the day." },
-    "DP1_English_Literature_HL": { "teachers": ["Marie"], "optimalSlot": 4, "classes": [2, 2, 1], "comment": "Extended essay work and close reading profit from early‑afternoon linguistic focus." },
+    "DP1_English_Literature_SL": { "teachers": ["Marie", "Helena"], "primaryTeachers": ["Marie"], "optimalSlot": 4, "classes": [2, 1], "allowPermutations": false, "cabinets": ["Room #001", "Room #002"], "comment": "Literary analysis benefits from stabilized verbal processing later in the day." },
+    "DP1_English_Literature_HL": { "teachers": ["Marie", "Helena"], "primaryTeachers": ["Marie"], "optimalSlot": 4, "classes": [2, 2, 1], "comment": "Extended essay work and close reading profit from early‑afternoon linguistic focus." },
 
-    "DP1_Mathematics_SL": { "teachers": ["Alex"], "optimalSlot": 0, "classes": [2, 1], "allowPermutations": false, "comment": "Problem‑solving is strongest first period when working‑memory and alertness are freshest." },
-    "DP1_Mathematics_HL": { "teachers": ["Alex"], "optimalSlot": 0, "classes": [2, 2, 1], "comment": "Higher‑level math needs peak cognitive resources available right at the start of the day." },
+    "DP1_Mathematics_SL": { "teachers": ["Alex", "Greg"], "optimalSlot": 0, "classes": [2, 1], "allowPermutations": false, "comment": "Problem‑solving is strongest first period when working‑memory and alertness are freshest." },
+    "DP1_Mathematics_HL": { "teachers": ["Alex", "Greg"], "primaryTeachers": ["Alex"], "optimalSlot": 0, "classes": [2, 2, 1], "comment": "Higher‑level math needs peak cognitive resources available right at the start of the day." },
 
-    "DP1_Chemistry_SL": { "teachers": ["Olga"], "optimalSlot": 1, "classes": [2, 1], "comment": "Hands‑on labs benefit from high alertness that persists through the second morning slot." },
-    "DP1_Chemistry_HL": { "teachers": ["Olga"], "optimalSlot": 1, "classes": [2], "comment": "Advanced chemistry calculations need strong focus still available early in the day." }
+    "DP1_Chemistry_SL": { "teachers": ["Olga", "Bob"], "primaryTeachers": ["Olga"], "optimalSlot": 1, "classes": [2, 1], "comment": "Hands‑on labs benefit from high alertness that persists through the second morning slot." },
+    "DP1_Chemistry_HL": { "teachers": ["Olga", "Bob"], "primaryTeachers": ["Olga", "Bob"], "requiredTeachers": 2, "optimalSlot": 1, "classes": [2], "comment": "Advanced chemistry calculations need strong focus still available early in the day." }
   },
 
   "teachers": {
     "Marie": { "importance": 50, "arriveEarly": true },
     "Alex": {},
-    "Olga": {}
+    "Olga": {},
+    "Bob": {},
+    "Greg": {},
+    "Helena": {}
   },
 
   "students": [

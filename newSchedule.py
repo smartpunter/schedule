@@ -21,22 +21,39 @@ def load_config(path: str = "schedule-config.json") -> Dict[str, Any]:
     default_teacher_arr = defaults.get("teacherArriveEarly", [False])[0]
     default_student_arr = defaults.get("studentArriveEarly", [True])[0]
 
-    for teacher in data.get("teachers", []):
-        teacher.setdefault("importance", default_teacher_imp)
-        teacher.setdefault("arriveEarly", default_teacher_arr)
+    teachers_raw = data.get("teachers", {})
+    teachers_list = []
+    if isinstance(teachers_raw, dict):
+        for name, info in teachers_raw.items():
+            entry = {"name": name, **(info or {})}
+            entry.setdefault("importance", default_teacher_imp)
+            entry.setdefault("arriveEarly", default_teacher_arr)
+            entry.setdefault("subjects", [])
+            teachers_list.append(entry)
+    else:
+        for entry in teachers_raw:
+            entry.setdefault("importance", default_teacher_imp)
+            entry.setdefault("arriveEarly", default_teacher_arr)
+            entry.setdefault("subjects", [])
+            teachers_list.append(entry)
+    data["teachers"] = teachers_list
 
     for student in data.get("students", []):
         student.setdefault("importance", default_student_imp)
         student.setdefault("group", 1)
         student.setdefault("arriveEarly", default_student_arr)
 
-    for subj in data.get("subjects", {}).values():
+    teacher_lookup = {t["name"]: t for t in teachers_list}
+    for sid, subj in data.get("subjects", {}).items():
         subj.setdefault("optimalSlot", default_opt_slot)
         subj.setdefault("allowPermutations", default_permutations)
         if len(set(subj.get("classes", []))) <= 1:
             subj["allowPermutations"] = False
         if "cabinets" not in subj:
             subj["cabinets"] = list(data.get("cabinets", {}))
+        for tname in subj.get("teachers", []):
+            if tname in teacher_lookup:
+                teacher_lookup[tname].setdefault("subjects", []).append(sid)
 
     return data
 

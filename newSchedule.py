@@ -13,12 +13,13 @@ def load_config(path: str = "schedule-config.json") -> Dict[str, Any]:
         data = json.load(fh)
 
     settings = data.get("settings", {})
-    default_teacher_imp = settings.get("defaultTeacherImportance", [1])[0]
-    default_student_imp = settings.get("defaultStudentImportance", [0])[0]
-    default_opt_slot = settings.get("defaultOptimalSlot", [0])[0]
-    default_permutations = settings.get("defaultPermutations", [True])[0]
-    default_teacher_arr = settings.get("defaultTeacherArriveEarly", [False])[0]
-    default_student_arr = settings.get("defaultStudentArriveEarly", [True])[0]
+    defaults = data.get("defaults", {})
+    default_teacher_imp = defaults.get("teacherImportance", [1])[0]
+    default_student_imp = defaults.get("studentImportance", [0])[0]
+    default_opt_slot = defaults.get("optimalSlot", [0])[0]
+    default_permutations = defaults.get("permutations", [True])[0]
+    default_teacher_arr = defaults.get("teacherArriveEarly", [False])[0]
+    default_student_arr = defaults.get("studentArriveEarly", [True])[0]
 
     for teacher in data.get("teachers", []):
         teacher.setdefault("importance", default_teacher_imp)
@@ -79,13 +80,12 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
     gap_teacher_val = penalties.get("gapTeacher", [0])[0]
     gap_student_val = penalties.get("gapStudent", [0])[0]
     settings = cfg.get("settings", {})
-    stud_weight = settings.get("studentsPenaltyWeight", [1])[0]
-    teach_weight = settings.get("teachersPenaltyWeight", [1])[0]
-    default_permutations = settings.get("defaultPermutations", [True])[0]
+    defaults = cfg.get("defaults", {})
+    default_permutations = defaults.get("permutations", [True])[0]
     max_teacher_slots = settings.get("maxTeacherSlots", [0])[0]
     max_student_slots = settings.get("maxStudentSlots", [0])[0]
-    default_student_imp = settings.get("defaultStudentImportance", [0])[0]
-    default_teacher_imp = settings.get("defaultTeacherImportance", [1])[0]
+    default_student_imp = defaults.get("studentImportance", [0])[0]
+    default_teacher_imp = defaults.get("teacherImportance", [1])[0]
     student_importance = {
         s["name"]: s.get("importance", default_student_imp) for s in students
     }
@@ -135,7 +135,6 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                         * penalty_val
                         * student_importance[s]
                         * student_size[s]
-                        * stud_weight
                         for s in enrolled
                     }
                     cand_list.append(
@@ -407,10 +406,10 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
 
     # objective
     model_params = cfg.get("model", {})
-    obj_mode = model_params.get("objective", "total")
+    obj_mode = settings.get("objective", ["total"])[0]
 
     teacher_gap_exprs = {
-        t: gap_teacher_val * teacher_importance[t] * teach_weight
+        t: gap_teacher_val * teacher_importance[t]
         * sum(var for var, tt in teacher_gap_vars if tt == t)
         for t in teacher_names
     }
@@ -419,7 +418,6 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
         s: gap_student_val
         * student_importance[s]
         * student_size[s]
-        * stud_weight
         * sum(var for var, ss in student_gap_vars if ss == s)
         for s in student_importance
     }
@@ -446,12 +444,10 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
             + len(teacher_gap_vars)
             * gap_teacher_val
             * max(teacher_importance.values() or [0])
-            * teach_weight
             + len(student_gap_vars)
             * gap_student_val
             * max(student_importance.values() or [0])
             * max(student_size.values() or [1])
-            * stud_weight
         )
         max_pen = model.NewIntVar(0, int(approx_bound + 1), "maxPenalty")
         for expr in teacher_gap_exprs.values():
@@ -524,10 +520,11 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
     teacher_state = {
         t: {day["name"]: {} for day in cfg["days"]} for t in teacher_names
     }
+    defaults = cfg.get("defaults", {})
     teach_arrive = {
         t["name"]: t.get(
             "arriveEarly",
-            settings.get("defaultTeacherArriveEarly", [False])[0],
+            defaults.get("teacherArriveEarly", [False])[0],
         )
         for t in cfg.get("teachers", [])
     }
@@ -553,7 +550,13 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
     student_state = {
         s: {day["name"]: {} for day in cfg["days"]} for s in student_names
     }
-    stud_arrive = {s["name"]: s.get("arriveEarly", settings.get("defaultStudentArriveEarly", [True])[0]) for s in cfg.get("students", [])}
+    stud_arrive = {
+        s["name"]: s.get(
+            "arriveEarly",
+            defaults.get("studentArriveEarly", [True])[0],
+        )
+        for s in cfg.get("students", [])
+    }
     for st in student_names:
         for day in cfg["days"]:
             name = day["name"]
@@ -573,10 +576,8 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
                     student_state[st][name][s] = "gap"
 
     penalties_cfg = {k: v[0] for k, v in cfg.get("penalties", {}).items()}
-    teachers_w = settings.get("teachersPenaltyWeight", [1])[0]
-    students_w = settings.get("studentsPenaltyWeight", [1])[0]
-    def_teacher_imp = settings.get("defaultTeacherImportance", [1])[0]
-    def_student_imp = settings.get("defaultStudentImportance", [0])[0]
+    def_teacher_imp = defaults.get("teacherImportance", [1])[0]
+    def_student_imp = defaults.get("studentImportance", [0])[0]
     teacher_importance = {
         t["name"]: t.get("importance", def_teacher_imp)
         for t in cfg.get("teachers", [])
@@ -585,7 +586,7 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
         s["name"]: s.get("importance", def_student_imp)
         for s in cfg.get("students", [])
     }
-    default_opt = settings.get("defaultOptimalSlot", [0])[0]
+    default_opt = defaults.get("optimalSlot", [0])[0]
 
     slot_penalties = {
         day["name"]: {slot: {k: 0 for k in penalties_cfg} for slot in day["slots"]}
@@ -603,7 +604,7 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
             # gap penalties for teachers
             for t in teacher_names:
                 if teacher_state[t][dname][slot] == "gap":
-                    p = penalties_cfg.get("gapTeacher", 0) * teacher_importance[t] * teachers_w
+                    p = penalties_cfg.get("gapTeacher", 0) * teacher_importance[t]
                     slot_penalties[dname][slot]["gapTeacher"] += p
                     slot_penalty_details[dname][slot].append({"name": t, "type": "gapTeacher", "amount": p})
             # gap penalties for students
@@ -613,7 +614,6 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
                         penalties_cfg.get("gapStudent", 0)
                         * student_importance[sname]
                         * student_size.get(sname, 1)
-                        * students_w
                     )
                     slot_penalties[dname][slot]["gapStudent"] += p
                     slot_penalty_details[dname][slot].append({"name": sname, "type": "gapStudent", "amount": p})
@@ -636,7 +636,6 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
                         base
                         * student_importance[sname]
                         * student_size.get(sname, 1)
-                        * students_w
                     )
                     slot_penalties[dname][slot]["unoptimalSlot"] += p
                     slot_penalty_details[dname][slot].append({"name": sname, "type": "unoptimalSlot", "amount": p})
@@ -1182,7 +1181,7 @@ function showSlot(day,idx,fromModal=false){
 
 function computeTeacherStats(name){
  const info=(configData.teachers||[]).find(t=>t.name===name)||{};
- const defArr=(configData.settings.defaultTeacherArriveEarly||[false])[0];
+ const defArr=(configData.defaults.teacherArriveEarly||[false])[0];
  const arrive=info.arriveEarly!==undefined?info.arriveEarly:defArr;
  let sizes=[],total=0,gap=0,time=0;
  scheduleData.days.forEach(day=>{
@@ -1204,7 +1203,7 @@ function computeTeacherStats(name){
 
 function computeStudentStats(name){
  const info=(configData.students||[]).find(s=>s.name===name)||{};
- const defArr=(configData.settings.defaultStudentArriveEarly||[true])[0];
+ const defArr=(configData.defaults.studentArriveEarly||[true])[0];
  const arrive=info.arriveEarly!==undefined?info.arriveEarly:defArr;
  let gap=0,time=0;
  scheduleData.days.forEach(day=>{
@@ -1224,7 +1223,7 @@ return{gap:gap,time:time};
 
 function computeTeacherInfo(name){
  const info=(configData.teachers||[]).find(t=>t.name===name)||{};
- const defArr=(configData.settings.defaultTeacherArriveEarly||[false])[0];
+ const defArr=(configData.defaults.teacherArriveEarly||[false])[0];
  const arrive=info.arriveEarly!==undefined?info.arriveEarly:defArr;
  let hours=0,gap=0,time=0,subjects={},pen=0;
  scheduleData.days.forEach(day=>{
@@ -1251,7 +1250,7 @@ function computeTeacherInfo(name){
 
 function computeStudentInfo(name){
  const info=(configData.students||[]).find(s=>s.name===name)||{};
- const defArr=(configData.settings.defaultStudentArriveEarly||[true])[0];
+ const defArr=(configData.defaults.studentArriveEarly||[true])[0];
  const arrive=info.arriveEarly!==undefined?info.arriveEarly:defArr;
  let hours=0,gap=0,time=0,subjects={},pen=0;
  scheduleData.days.forEach(day=>{
@@ -1299,7 +1298,7 @@ function buildTeachers(){
    const row=document.createElement('div');
    row.className='overview-row';
    const arr=item.stat.arrive?"yes":"no";
-   const pr=item.info.importance!==undefined?item.info.importance:(configData.settings.defaultTeacherImportance||[1])[0];
+   const pr=item.info.importance!==undefined?item.info.importance:(configData.defaults.teacherImportance||[1])[0];
    let subjHtml='';
    Object.keys(item.stat.subjects).forEach(sid=>{
      const s=item.stat.subjects[sid];
@@ -1331,7 +1330,7 @@ function buildStudents(){
    const row=document.createElement('div');
    row.className='overview-row';
    const arr=item.stat.arrive?"yes":"no";
-   const pr=item.info.importance!==undefined?item.info.importance:(configData.settings.defaultStudentImportance||[0])[0];
+   const pr=item.info.importance!==undefined?item.info.importance:(configData.defaults.studentImportance||[0])[0];
    let subjHtml='';
    Object.keys(item.stat.subjects).forEach(sid=>{
      const s=item.stat.subjects[sid];
@@ -1353,7 +1352,7 @@ function buildStudents(){
 function showTeacher(idx,fromModal=false){
  const info=(configData.teachers||[])[idx]||{};
  const name=info.name||'';
- const defImp=(configData.settings.defaultTeacherImportance||[1])[0];
+ const defImp=(configData.defaults.teacherImportance||[1])[0];
  const imp=info.importance!==undefined?info.importance:defImp;
  const stats=computeTeacherStats(name);
  const full=computeTeacherInfo(name);
@@ -1381,7 +1380,7 @@ function showTeacher(idx,fromModal=false){
 function showStudent(idx,fromModal=false){
  const info=(configData.students||[])[idx]||{};
  const name=info.name||'';
- const defImp=(configData.settings.defaultStudentImportance||[0])[0];
+ const defImp=(configData.defaults.studentImportance||[0])[0];
  const imp=info.importance!==undefined?info.importance:defImp;
  const stats=computeStudentStats(name);
  const full=computeStudentInfo(name);
@@ -1414,7 +1413,7 @@ function showCabinet(name,fromModal=false){
 
 function showSubject(id,fromModal=false){
  const subj=configData.subjects[id]||{};
- const defOpt=(configData.settings.defaultOptimalSlot||[0])[0];
+ const defOpt=(configData.defaults.optimalSlot||[0])[0];
  let html='<h2>Subject: '+(subj.name||id)+'</h2>';
  html+='<table class="info-table">'+
   '<tr><th>Classes</th><td>'+((subj.classes||[]).join(', ')||'-')+'</td></tr>'+

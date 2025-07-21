@@ -1,15 +1,16 @@
 {
   "settings": {
-    "defaultTeacherImportance": [20, "Default teacher importance"],
-    "defaultStudentImportance": [10, "Default student importance"],
-    "defaultOptimalSlot": [0, "Default optimal slot for subjects with unspecified optimal slot. 0 means first lesson of the day"],
-    "defaultTeacherArriveEarly": [false, "Whether a teacher should appear early on morning"],
-    "defaultStudentArriveEarly": [true, "Whether a student should appear early on morning"],
     "maxTeacherSlots": [8, "Maximum amount of slots in a row, which can be assigned to teacher"],
     "maxStudentSlots": [6, "Maximum amount of slots in a row, which can be assigned to student"],
-    "teachersPenaltyWeight": [1, "Multiplier for teachers penalties, the higher this number, the more we try to please teachers"],
-    "studentsPenaltyWeight": [1, "Multiplier for students penalties, the higher this number, the more we try to please students"],
-    "defaultPermutations": [true, "Allow permutations of subject classes by default"]
+    "objective": ["total", "Optimisation objective: 'total' or 'fair'"]
+  },
+  "defaults": {
+    "teacherImportance": [20, "Teacher importance"],
+    "studentImportance": [10, "Student importance"],
+    "optimalSlot": [0, "Optimal slot for subjects with unspecified optimal slot. 0 means first lesson of the day"],
+    "teacherArriveEarly": [false, "Whether a teacher should appear early on morning"],
+    "studentArriveEarly": [true, "Whether a student should appear early on morning"],
+    "permutations": [true, "Allow permutations of subject classes by default"]
   },
   "penalties": {
     "gapTeacher": [2, "Penalty for having gap in teacher schedule"],
@@ -40,13 +41,13 @@
     "DP1_Mathematics_HL": { "classes": [2, 2, 1], "optimalSlot": 0, "comment": "Higher‑level math needs peak cognitive resources available right at the start of the day." },
 
     "DP1_Chemistry_SL": { "classes": [2, 1], "optimalSlot": 1, "comment": "Hands‑on labs benefit from high alertness that persists through the second morning slot." },
-    "DP1_Chemistry_HL": { "classes": [2], "optimalSlot": 1, "comment": "Advanced chemistry calculations need strong focus still available early in the day." },
+    "DP1_Chemistry_HL": { "classes": [2], "optimalSlot": 1, "comment": "Advanced chemistry calculations need strong focus still available early in the day." }
   },
 
   "teachers": [
     { "importance": 50, "arriveEarly": true, "name": "Marie", "subjects": [ "DP1_English_Literature_SL", "DP1_English_Literature_HL" ] },
     { "name": "Alex", "subjects": [ "DP1_Mathematics_SL", "DP1_Mathematics_HL" ] },
-    { "name": "Olga", "subjects": [ "DP1_Chemistry_SL", "DP1_Chemistry_HL" ] },
+    { "name": "Olga", "subjects": [ "DP1_Chemistry_SL", "DP1_Chemistry_HL" ] }
   ],
 
   "students": [
@@ -61,8 +62,7 @@
   "model": {
     "maxTime": 1500,
     "workers": 10,
-    "showProgress": true,
-    "objective": "total"
-  },
-  
+    "showProgress": true
+  }
+
 }

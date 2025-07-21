@@ -2,21 +2,21 @@
 
 ## About the project
 
-This utility creates a timetable for a small school using [Google OR-Tools](https://developers.google.com/optimization/). It reads a JSON configuration that lists subjects, teachers, students and available rooms, then searches for an arrangement of lessons with the smallest penalty score.
+This utility creates a timetable for a small (or maybe even big, if you have computing resources to find the solution) school using [Google OR-Tools](https://developers.google.com/optimization/). It reads a JSON configuration that lists subjects, teachers, students and available rooms, then searches for an arrangement of lessons with the smallest penalty score.
 
 **Positives**
 - Flexible data format that covers many real-life constraints
 - Generates both machine readable JSON and an easy HTML timetable
 - Includes analysis tables for teachers and students
 
-**Negatives**
+**IMPORTANT**
 - Preparing the configuration file takes time
-- Tested only on small data sets; large schools may need tuning
-- Searching for the best schedule can take a long time
+- Tested only on relatively small data sets (up to 50 students); large schools may need fine-tuning
+- Searching for the best schedule will take a long time. Pay attention to script output, when it stops changing - probably you found solution which is good enough.
 
 ## Quick start
 
-The following steps assume absolutely no prior experience with the command line.
+The following steps assume absolutely no prior experience with the command line. For configuration format look below.
 
 ### 1. Download the program
 

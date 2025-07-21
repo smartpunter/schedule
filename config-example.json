@@ -1,6 +1,6 @@
 {
   "settings": {
-    "maxTeacherSlots": [8, "Maximum number of consecutive lessons a teacher can teach. High value allows long stretches, low value forces more breaks."],
+    "maxTeacherSlots": [6, "Maximum number of consecutive lessons a teacher can teach. High value allows long stretches, low value forces more breaks."],
     "maxStudentSlots": [6, "Maximum number of consecutive lessons a student can attend. Large number means longer school days without rest."],
     "objective": ["total", "Optimisation goal: 'total' minimises all penalties, 'fair' balances penalties between teachers and students."]
   },
@@ -82,7 +82,7 @@
 
   "model": {
     "maxTime": [10800, "Maximum solving time in seconds. High value allows thorough search but may take hours."],
-    "workers": [4, "CPU cores to use. By default it is available cores minus two, but at least four."],
+    "workers": [null, "CPU cores to use. By default it is available cores minus two, but at least four."],
     "showProgress": [true, "Display search progress with the current best score."]
   }
 

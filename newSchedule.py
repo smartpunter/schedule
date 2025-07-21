@@ -1817,7 +1817,7 @@ def main() -> None:
     if auto_yes:
         show_analysis = True
     else:
-        ans = input("Show analysis? [y/N] ")
+        ans = input("Show analysis and generate html page? [y/N] ")
         show_analysis = ans.strip().lower().startswith("y")
 
     if show_analysis:

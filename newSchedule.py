@@ -16,6 +16,7 @@ def load_config(path: str = "schedule-config.json") -> Dict[str, Any]:
     default_teacher_imp = settings.get("defaultTeacherImportance", [1])[0]
     default_student_imp = settings.get("defaultStudentImportance", [0])[0]
     default_opt_slot = settings.get("defaultOptimalSlot", [0])[0]
+    default_permutations = settings.get("defaultPermutations", [True])[0]
     default_teacher_arr = settings.get("defaultTeacherArriveEarly", [False])[0]
     default_student_arr = settings.get("defaultStudentArriveEarly", [True])[0]
 
@@ -30,6 +31,9 @@ def load_config(path: str = "schedule-config.json") -> Dict[str, Any]:
 
     for subj in data.get("subjects", {}).values():
         subj.setdefault("optimalSlot", default_opt_slot)
+        subj.setdefault("allowPermutations", default_permutations)
+        if len(set(subj.get("classes", []))) <= 1:
+            subj["allowPermutations"] = False
         if "cabinets" not in subj:
             subj["cabinets"] = list(data.get("cabinets", {}))
 
@@ -77,6 +81,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
     settings = cfg.get("settings", {})
     stud_weight = settings.get("studentsPenaltyWeight", [1])[0]
     teach_weight = settings.get("teachersPenaltyWeight", [1])[0]
+    default_permutations = settings.get("defaultPermutations", [True])[0]
     max_teacher_slots = settings.get("maxTeacherSlots", [0])[0]
     max_student_slots = settings.get("maxStudentSlots", [0])[0]
     default_student_imp = settings.get("defaultStudentImportance", [0])[0]
@@ -199,11 +204,12 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
             if vars_in_day:
                 model.Add(sum(vars_in_day) <= 1)
 
-        # classes must appear in chronological order across days
-        for idx in range(1, class_count):
-            prev_k = (sid, idx - 1)
-            curr_k = (sid, idx)
-            model.Add(class_day_idx[curr_k] > class_day_idx[prev_k])
+        if not subj.get("allowPermutations", default_permutations):
+            # enforce strict class order across days
+            for idx in range(1, class_count):
+                prev_k = (sid, idx - 1)
+                curr_k = (sid, idx)
+                model.Add(class_day_idx[curr_k] > class_day_idx[prev_k])
 
     # teacher/student/cabinet conflicts
     for day in days:

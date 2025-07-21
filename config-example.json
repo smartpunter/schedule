@@ -8,7 +8,8 @@
     "maxTeacherSlots": [8, "Maximum amount of slots in a row, which can be assigned to teacher"],
     "maxStudentSlots": [6, "Maximum amount of slots in a row, which can be assigned to student"],
     "teachersPenaltyWeight": [1, "Multiplier for teachers penalties, the higher this number, the more we try to please teachers"],
-    "studentsPenaltyWeight": [1, "Multiplier for students penalties, the higher this number, the more we try to please students"]
+    "studentsPenaltyWeight": [1, "Multiplier for students penalties, the higher this number, the more we try to please students"],
+    "defaultPermutations": [true, "Allow permutations of subject classes by default"]
   },
   "penalties": {
     "gapTeacher": [2, "Penalty for having gap in teacher schedule"],
@@ -35,7 +36,7 @@
     "DP1_English_Literature_SL": { "classes": [2, 1], "cabinets": ["Room #001", "Room #002"], "optimalSlot": 4, "comment": "Literary analysis benefits from stabilized verbal processing later in the day." },
     "DP1_English_Literature_HL": { "classes": [2, 2, 1], "optimalSlot": 4, "comment": "Extended essay work and close reading profit from early‑afternoon linguistic focus." },
 
-    "DP1_Mathematics_SL": { "classes": [2, 1], "optimalSlot": 0, "comment": "Problem‑solving is strongest first period when working‑memory and alertness are freshest." },
+    "DP1_Mathematics_SL": { "classes": [2, 1], "optimalSlot": 0, "comment": "Problem‑solving is strongest first period when working‑memory and alertness are freshest.", "allowPermutations": false },
     "DP1_Mathematics_HL": { "classes": [2, 2, 1], "optimalSlot": 0, "comment": "Higher‑level math needs peak cognitive resources available right at the start of the day." },
 
     "DP1_Chemistry_SL": { "classes": [2, 1], "optimalSlot": 1, "comment": "Hands‑on labs benefit from high alertness that persists through the second morning slot." },

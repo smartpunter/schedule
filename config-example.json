@@ -45,9 +45,18 @@
   },
 
   "teachers": {
-    "Marie": { "importance": 50, "arriveEarly": true },
-    "Helena": {},
-    "Jane": {},
+    "Marie": {
+      "importance": 50,
+      "arriveEarly": true,
+      "allowedSlots": { "Tuesday": [], "Thursday": [4,5,6,7], "Friday": [] },
+      "forbiddenSlots": { "Tuesday": [3,4] }
+    },
+    "Helena": {
+      "allowedSlots": { "Monday": [], "Wednesday": [0,1,2,3,4] }
+    },
+    "Jane": {
+      "forbiddenSlots": { "Friday": [5,6] }
+    },
 
     "Alex": {},
     "Greg": {},

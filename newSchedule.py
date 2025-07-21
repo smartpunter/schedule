@@ -3,7 +3,7 @@ import os
 import sys
 from collections import defaultdict
 from statistics import mean
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Set
 from ortools.sat.python import cp_model
 
 
@@ -84,6 +84,33 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
         sid: [t for t in teacher_map if sid in teacher_map[t]] for sid in subjects
     }
 
+    # calculate allowed slots for every teacher
+    teacher_limits: Dict[str, Dict[str, Set[int]]] = {}
+    for t in teachers:
+        name = t["name"]
+        allow = t.get("allowedSlots")
+        forbid = t.get("forbiddenSlots")
+        avail: Dict[str, Set[int]] = {}
+        for day in days:
+            dname = day["name"]
+            slots_set = set(day["slots"])
+            if allow is not None:
+                if dname in allow:
+                    al = allow[dname]
+                    allowed = slots_set.copy() if not al else set(al)
+                else:
+                    allowed = set()
+            else:
+                allowed = slots_set.copy()
+            if forbid is not None and dname in forbid:
+                fb = forbid[dname]
+                if not fb:
+                    allowed = set()
+                else:
+                    allowed -= set(fb)
+            avail[dname] = allowed
+        teacher_limits[name] = avail
+
     students_by_subject: Dict[str, List[str]] = {}
     student_size: Dict[str, int] = {}
     student_arrive = {s["name"]: bool(s.get("arriveEarly", True)) for s in students}
@@ -140,8 +167,19 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
             for day_idx, day in enumerate(days):
                 dname = day["name"]
                 slots = day["slots"]
+                required = int(subj.get("requiredTeachers", 1))
                 for start in slots:
                     if start + length - 1 > slots[-1]:
+                        continue
+                    available = [
+                        t
+                        for t in allowed_teachers
+                        if all(
+                            s in teacher_limits[t][dname]
+                            for s in range(start, start + length)
+                        )
+                    ]
+                    if len(available) < required:
                         continue
                     var = model.NewBoolVar(f"x_{sid}_{idx}_{dname}_{start}")
                     diff = abs(start - subj.get("optimalSlot", 0))
@@ -250,7 +288,10 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                             model.Add(b >= tv + c["var"] - 1)
                             involved.append(b)
                 if involved:
-                    model.Add(sum(involved) <= 1)
+                    if slot in teacher_limits[teacher][dname]:
+                        model.Add(sum(involved) <= 1)
+                    else:
+                        model.Add(sum(involved) == 0)
 
             for cab in cabinets:
                 involved = []
@@ -309,6 +350,8 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                 if involved:
                     model.AddMaxEquality(var, involved)
                 else:
+                    model.Add(var == 0)
+                if slot not in teacher_limits[t][dname]:
                     model.Add(var == 0)
                 teacher_slot[(t, dname, slot)] = var
 

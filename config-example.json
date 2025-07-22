@@ -44,7 +44,7 @@
     "DP1_Mathematics_HL": { "teachers": ["Alex"], "optimalSlot": 0, "classes": [2, 2, 1], "comment": "Higher‑level math needs peak cognitive resources available right at the start of the day." },
 
     "DP1_Chemistry_SL": { "teachers": ["Olga", "Bob"], "optimalSlot": 1, "classes": [2, 1], "comment": "Hands‑on labs benefit from high alertness that persists through the second morning slot." },
-    "DP1_Chemistry_HL": { "teachers": ["Olga", "Bob", "Greg"], "primaryTeachers": ["Olga"], "requiredTeachers": 2, "optimalSlot": 1, "classes": [2], "comment": "Advanced chemistry calculations need strong focus still available early in the day." }
+    "DP1_Chemistry_HL": { "teachers": ["Olga", "Bob", "Greg"], "primaryTeachers": ["Olga"], "requiredTeachers": 2, "requiredCabinets": 2, "optimalSlot": 1, "classes": [2], "comment": "Advanced chemistry calculations need strong focus still available early in the day." }
   },
 
   "teachers": {

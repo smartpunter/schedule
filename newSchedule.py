@@ -71,6 +71,7 @@ def load_config(path: str = "schedule-config.json") -> Dict[str, Any]:
             subj["cabinets"] = list(data.get("cabinets", {}))
         subj.setdefault("primaryTeachers", [])
         subj.setdefault("requiredTeachers", 1)
+        subj.setdefault("requiredCabinets", 1)
         for tname in subj.get("teachers", []):
             if tname in teacher_lookup:
                 teacher_lookup[tname].setdefault("subjects", []).append(sid)
@@ -78,14 +79,16 @@ def load_config(path: str = "schedule-config.json") -> Dict[str, Any]:
     lessons_parsed = []
     for item in data.get("lessons", []):
         if not isinstance(item, list) or len(item) < 5:
-            raise ValueError("Lesson entry must contain day, slot, subject, cabinet and teachers")
+            raise ValueError("Lesson entry must contain day, slot, subject, cabinet(s) and teachers")
         day, slot, subject_id, cabinet, teachers = item
+        if isinstance(cabinet, str):
+            cabinet = [cabinet]
         lessons_parsed.append(
             {
                 "day": day,
                 "slot": int(slot),
                 "subject": subject_id,
-                "cabinet": cabinet,
+                "cabinets": cabinet,
                 "teachers": list(teachers),
             }
         )
@@ -133,7 +136,9 @@ def _prepare_fixed_classes(
         day = entry["day"]
         slot = int(entry["slot"])
         sid = entry["subject"]
-        room = entry["cabinet"]
+        rooms = entry["cabinets"]
+        if isinstance(rooms, str):
+            rooms = [rooms]
         tlist = entry["teachers"]
 
         if day not in day_lookup:
@@ -154,16 +159,21 @@ def _prepare_fixed_classes(
                 f"Lesson for {sid} starting at {day} slot {slot} exceeds day length"
             )
 
-        if room not in cabinets:
-            raise ValueError(f"Unknown cabinet '{room}' in lesson {entry}")
-        if room not in subj.get("cabinets", list(cabinets)):
-            raise ValueError(f"Cabinet '{room}' not allowed for subject {sid}")
-
-        class_size = sum(student_size[s] for s in students_by_subject.get(sid, []))
-        if cabinets[room]["capacity"] < class_size:
+        required_cabs = int(subj.get("requiredCabinets", 1))
+        if len(rooms) != required_cabs:
             raise ValueError(
-                f"Cabinet '{room}' too small for subject {sid} (size {class_size})"
+                f"Subject {sid} requires {required_cabs} cabinets, got {len(rooms)}"
             )
+        class_size = sum(student_size[s] for s in students_by_subject.get(sid, []))
+        for room in rooms:
+            if room not in cabinets:
+                raise ValueError(f"Unknown cabinet '{room}' in lesson {entry}")
+            if room not in subj.get("cabinets", list(cabinets)):
+                raise ValueError(f"Cabinet '{room}' not allowed for subject {sid}")
+            if cabinets[room]["capacity"] < class_size:
+                raise ValueError(
+                    f"Cabinet '{room}' too small for subject {sid} (size {class_size})"
+                )
 
         required = int(subj.get("requiredTeachers", 1))
         if len(tlist) != required:
@@ -197,7 +207,7 @@ def _prepare_fixed_classes(
             "day_idx": day_index[day],
             "start": slot,
             "length": length,
-            "cabinet": room,
+            "cabinets": rooms,
             "teachers": tlist,
         }
         used_idx[sid] += 1
@@ -317,26 +327,28 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
     # chosen day index for each class
     class_day_idx: Dict[tuple, cp_model.IntVar] = {}
     # teacher and cabinet selections for every class
-    class_cabinet: Dict[tuple, cp_model.IntVar] = {}
     teacher_choice: Dict[tuple, cp_model.BoolVar] = {}
     cabinet_choice: Dict[tuple, cp_model.BoolVar] = {}
     allowed_teacher_map: Dict[tuple, List[str]] = {}
+    allowed_cabinet_map: Dict[tuple, List[str]] = {}
     avoid_map = {
         sid: subj.get("avoidConsecutive", default_avoid_consecutive)
         for sid, subj in subjects.items()
     }
-    # helper mapping for allowed teacher/cabinet choices
-    teacher_index = {name: i for i, name in enumerate(teacher_names)}
-    cabinet_index = {name: i for i, name in enumerate(cabinets)}
-
+    # helper mapping for allowed teacher and cabinet choices
     for sid, subj in subjects.items():
         allowed_teachers = subject_teachers.get(sid)
         if not allowed_teachers:
             raise ValueError(f"No teacher available for subject {sid}")
-        allowed_cabinets = subj.get("cabinets", list(cabinets))
-        class_lengths = subj["classes"]
         enrolled = students_by_subject.get(sid, [])
         class_size = sum(student_size[s] for s in enrolled)
+        allowed_cabinets = [
+            c
+            for c in subj.get("cabinets", list(cabinets))
+            if cabinets[c]["capacity"] >= class_size
+        ]
+        required_cabs = int(subj.get("requiredCabinets", 1))
+        class_lengths = subj["classes"]
 
         for idx, length in enumerate(class_lengths):
             key = (sid, idx)
@@ -458,32 +470,20 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
             if tv_list:
                 model.Add(sum(tv_list) == required)
             allowed_teacher_map[key] = allowed_teachers
-            cab_domain = [
-                cabinet_index[c]
-                for c in allowed_cabinets
-                if cabinets[c]["capacity"] >= class_size
-            ]
-            if not cab_domain:
-                raise RuntimeError(f"No cabinet for subject {sid} class {idx}")
-            class_cabinet[key] = model.NewIntVarFromDomain(
-                cp_model.Domain.FromValues(cab_domain),
-                f"cab_{sid}_{idx}",
-            )
+            cv_list = []
             for c in allowed_cabinets:
-                if cabinets[c]["capacity"] < class_size:
-                    continue
                 cv = model.NewBoolVar(f"is_{sid}_{idx}_cab_{c}")
                 if fixed is not None:
-                    if c == fixed["cabinet"]:
+                    if c in fixed["cabinets"]:
                         model.Add(cv == 1)
                     else:
                         model.Add(cv == 0)
-                else:
-                    model.Add(class_cabinet[key] == cabinet_index[c]).OnlyEnforceIf(cv)
-                    model.Add(class_cabinet[key] != cabinet_index[c]).OnlyEnforceIf(cv.Not())
                 cabinet_choice[(sid, idx, c)] = cv
-            if fixed is not None:
-                model.Add(class_cabinet[key] == cabinet_index[fixed["cabinet"]])
+                cv_list.append(cv)
+            if not cv_list or len(cv_list) < required_cabs:
+                raise RuntimeError(f"No cabinet for subject {sid} class {idx}")
+            model.Add(sum(cv_list) == required_cabs)
+            allowed_cabinet_map[key] = allowed_cabinets
             # create interval objects for candidates
             for cand in cand_list:
                 cand["interval"] = model.NewOptionalIntervalVar(
@@ -844,8 +844,11 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
 
     schedule = _init_schedule(days)
     for (sid, idx), cand_list in candidates.items():
-        cab_idx = solver.Value(class_cabinet[(sid, idx)])
-        cabinet_name = list(cabinets.keys())[cab_idx]
+        selected_cabs = [
+            c
+            for c in allowed_cabinet_map[(sid, idx)]
+            if solver.Value(cabinet_choice[(sid, idx, c)])
+        ]
         assigned_teachers = [
             t
             for t in allowed_teacher_map[(sid, idx)]
@@ -858,7 +861,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                         {
                             "subject": sid,
                             "teachers": assigned_teachers,
-                            "cabinet": cabinet_name,
+                            "cabinets": selected_cabs,
                             "students": c["students"],
                             "size": c["size"],
                             "start": c["start"],
@@ -1450,6 +1453,9 @@ function teacherSpan(name,subj){
   const inner=prim.includes(name)?'<strong>'+name+'</strong>':name;
   return '<span class="clickable teacher" data-id="'+id+'">'+inner+'</span>';
 }
+function cabinetSpan(name){
+  return '<span class="clickable cabinet" data-id="'+name+'">'+name+'</span>';
+}
 function makeParamTable(list){
   let html='<div class="param-table">';
   list.forEach(item=>{
@@ -1529,9 +1535,10 @@ function buildTable(){
        const part=(cls.length>1)?((i-cls.start+1)+'/'+cls.length):'1/1';
        const l1=document.createElement('div');
        l1.className='class-line';
-       l1.innerHTML='<span class="cls-subj clickable subject" data-id="'+cls.subject+'">'+subj+'</span>'+
-        '<span class="cls-room clickable cabinet" data-id="'+cls.cabinet+'">'+cls.cabinet+'</span>' +
-        '<span class="cls-part">'+part+'</span>';
+        const rooms=(cls.cabinets||[]).map(c=>cabinetSpan(c)).join(', ');
+        l1.innerHTML='<span class="cls-subj clickable subject" data-id="'+cls.subject+'">'+subj+'</span>'+
+         '<span class="cls-room">'+rooms+'</span>'+
+         '<span class="cls-part">'+part+'</span>';
        const l2=document.createElement('div');
        l2.className='class-line';
       const tNames=(cls.teachers||[]).map(t=>teacherSpan(t,cls.subject)).join(', ');
@@ -1590,10 +1597,11 @@ function makeGrid(filterFn){
        const subj=(configData.subjects[cls.subject]||{}).name||cls.subject;
        const part=(cls.length>1)?((i-cls.start+1)+'/'+cls.length):'1/1';
        const tNames=(cls.teachers||[]).map(t=>teacherSpan(t,cls.subject)).join(', ');
-       html+='<div class="class-block">'+
-        '<div class="class-line">'+
+        const rooms=(cls.cabinets||[]).map(c=>cabinetSpan(c)).join(', ');
+        html+='<div class="class-block">'+
+         '<div class="class-line">'+
           '<span class="cls-subj clickable subject" data-id="'+cls.subject+'">'+subj+'</span>'+
-          '<span class="cls-room clickable cabinet" data-id="'+cls.cabinet+'">'+cls.cabinet+'</span>'+
+          '<span class="cls-room">'+rooms+'</span>'+
           '<span class="cls-part">'+part+'</span>'+
         '</div>'+
         '<div class="class-line">'+
@@ -1622,7 +1630,7 @@ function showSlot(day,idx,fromModal=false){
      '<div class="detail-line">'+
        '<span class="detail-subj clickable subject" data-id="'+cls.subject+'">'+subj+'</span>'+
       '<span class="detail-teacher">'+(cls.teachers||[]).map(t=>teacherSpan(t,cls.subject)).join(', ')+'</span>'+
-       '<span class="detail-room clickable cabinet" data-id="'+cls.cabinet+'">'+cls.cabinet+'</span>'+
+       '<span class="detail-room">'+(cls.cabinets||[]).map(c=>cabinetSpan(c)).join(', ')+'</span>'+
        '<span class="detail-size">'+cls.size+'</span>'+
        '<span class="detail-part">'+part+'</span>'+
      '</div>';
@@ -1892,7 +1900,7 @@ function showStudent(idx,fromModal=false){
 
 function showCabinet(name,fromModal=false){
  const info=configData.cabinets[name]||{};
- let html='<h2>Room: '+name+'</h2>'+makeGrid(cls=>cls.cabinet===name);
+  let html='<h2>Room: '+name+'</h2>'+makeGrid(cls=>(cls.cabinets||[]).includes(name));
  const params=[[ 'Capacity',info.capacity||'-' ]];
  html+='<h3>Configuration</h3>'+makeParamTable(params);
  openModal(html,!fromModal);
@@ -1915,15 +1923,18 @@ html+='<h3>Teachers</h3><table class="info-table"><tr><th>Name</th></tr>';
  const boldPerm=perm!==defPerm;
  const avoid=subj.avoidConsecutive!==undefined?subj.avoidConsecutive:defAvoid;
  const boldAvoid=avoid!==defAvoid;
- const req=subj.requiredTeachers!==undefined?subj.requiredTeachers:1;
- const boldReq=req!==1;
- const params=[
+  const req=subj.requiredTeachers!==undefined?subj.requiredTeachers:1;
+  const boldReq=req!==1;
+  const reqCab=subj.requiredCabinets!==undefined?subj.requiredCabinets:1;
+  const boldReqCab=reqCab!==1;
+  const params=[
   ['Classes',(subj.classes||[]).join(', ')||'-'],
   ['Optimal lesson',opt+1,boldOpt],
   ['Allow permutations',perm?'yes':'no',boldPerm],
   ['Avoid consecutive',avoid?'yes':'no',boldAvoid],
-  ['Required teachers',req,boldReq],
-  ['Cabinets',(subj.cabinets||[]).join(', ')||'-'],
+   ['Required teachers',req,boldReq],
+   ['Required cabinets',reqCab,boldReqCab],
+   ['Cabinets',(subj.cabinets||[]).join(', ')||'-'],
   ['Primary teachers',(subj.primaryTeachers||[]).join(', ')||'-']
  ];
  html+='<h3>Configuration</h3>'+makeParamTable(params);

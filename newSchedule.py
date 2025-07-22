@@ -1875,7 +1875,9 @@ return{gap:gap,time:time};
 function computeTeacherInfo(name){
  const info=(configData.teachers||[]).find(t=>t.name===name)||{};
  const defArr=(configData.defaults.teacherArriveEarly||[false])[0];
+ const defImp=(configData.defaults.teacherImportance||[1])[0];
  const arrive=info.arriveEarly!==undefined?info.arriveEarly:defArr;
+ const imp=info.importance!==undefined?info.importance:defImp;
  let hours=0,gap=0,time=0,subjects={},pen=0;
  scheduleData.days.forEach(day=>{
    const slots=day.slots;
@@ -1896,13 +1898,15 @@ function computeTeacherInfo(name){
   slots.forEach(sl=>{(sl.penaltyDetails||[]).forEach(p=>{if(p.name===name)pen+=p.amount;});});
  });
  for(const k in subjects){subjects[k].avg=(subjects[k].size/subjects[k].count).toFixed(1);}
- return{arrive,imp:info.importance,penalty:pen,hours:hours,time:time,subjects};
+ return{arrive,imp,penalty:pen/imp,hours:hours,time:time,subjects};
 }
 
 function computeStudentInfo(name){
  const info=(configData.students||[]).find(s=>s.name===name)||{};
  const defArr=(configData.defaults.studentArriveEarly||[true])[0];
+ const defImp=(configData.defaults.studentImportance||[0])[0];
  const arrive=info.arriveEarly!==undefined?info.arriveEarly:defArr;
+ const imp=info.importance!==undefined?info.importance:defImp;
  let hours=0,gap=0,time=0,subjects={},pen=0;
  scheduleData.days.forEach(day=>{
    const slots=day.slots;
@@ -1927,13 +1931,13 @@ function computeStudentInfo(name){
         const cls=sl.classes.find(c=>c.students.includes(name));
         if(cls){
           subjects[cls.subject]=subjects[cls.subject]||{count:0,penalty:0};
-          subjects[cls.subject].penalty+=p.amount;
+          subjects[cls.subject].penalty+=(p.amount/imp);
         }
       }
     }
   });});
 });
-return{arrive,imp:info.importance,penalty:pen,hours:hours,time:time,subjects};
+return{arrive,imp,penalty:pen/imp,hours:hours,time:time,subjects};
 }
 
 function buildTeachers(){

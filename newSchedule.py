@@ -4,6 +4,7 @@ import sys
 from collections import defaultdict
 from statistics import mean
 from typing import Dict, List, Any, Set
+from datetime import datetime
 from ortools.sat.python import cp_model
 
 DEFAULT_MAX_TIME = 10800  # 3 hours
@@ -1487,7 +1488,13 @@ def render_schedule(schedule: Dict[str, Any], cfg: Dict[str, Any]) -> None:
         print()
 
 
-def generate_html(schedule: Dict[str, Any], cfg: Dict[str, Any], path: str = "schedule.html") -> None:
+def generate_html(
+    schedule: Dict[str, Any],
+    cfg: Dict[str, Any],
+    path: str = "schedule.html",
+    generated: str | None = None,
+    include_config: bool = False,
+) -> None:
     """Create interactive HTML overview of the schedule."""
     schedule_json = json.dumps(schedule, ensure_ascii=False)
     cfg_json = json.dumps(cfg, ensure_ascii=False)
@@ -1560,10 +1567,13 @@ body { font-family: Arial, sans-serif; }
 .param-block{flex:0 0 calc((100% - (6*var(--gap)))/6);border:1px solid #999;text-align:center;}
 .param-block div{margin:0 0 5px 0; padding: 4px 0;}
 .param-name{background:#f0f0f0;}
+.meta{font-size:0.9em;margin-bottom:10px;}
+pre{white-space:pre-wrap;word-break:break-all;background:#f8f8f8;padding:10px;}
 </style>
 </head>
 <body>
 <h1>Schedule Overview</h1>
+__META__
 <div id="table" class="schedule-grid"></div>
 <h2 class="overview-section">Teachers Overview</h2>
 <div id="teachers" class="overview-table"></div>
@@ -1580,8 +1590,10 @@ const modal=document.getElementById('modal');
 const close=document.getElementById('close');
 const historyBox=document.getElementById('history');
 const modalBody=document.getElementById('modal-body');
+const cfgLink=document.getElementById('show-config');
 close.onclick=()=>{modal.style.display='none';};
 window.onclick=e=>{if(e.target==modal)modal.style.display='none';};
+if(cfgLink){cfgLink.onclick=()=>{showConfig();};}
 const studentSize={};
 (configData.students||[]).forEach((s,i)=>{studentSize[s.name]=s.group||1;});
 const teacherIndex={};
@@ -1663,9 +1675,17 @@ function openModal(html,reset=true){
      historyStack=historyStack.slice(-3);
      historyTitles=historyTitles.slice(-3);
    }
- }
- historyIndex=historyStack.length-1;
- renderModal();
+}
+historyIndex=historyStack.length-1;
+renderModal();
+}
+function showConfig(){
+ const json=JSON.stringify(configData,null,2);
+ const html='<h2>Configuration</h2><button id="cfg-copy">Copy</button><pre id="cfg-pre"></pre>';
+ openModal(html);
+ document.getElementById('cfg-pre').textContent=json;
+ const btn=document.getElementById('cfg-copy');
+ if(btn){btn.onclick=()=>{navigator.clipboard.writeText(json);};}
 }
 const COLOR_MIN=[220,255,220];
 const COLOR_MID=[255,255,255];
@@ -2134,7 +2154,17 @@ buildStudents();
 </body>
 </html>
 """
-    html = html.replace("__SCHEDULE__", schedule_json).replace("__CONFIG__", cfg_json)
+    meta = ""
+    if generated:
+        meta = f"<div class=\"meta\">Generated: {generated}"
+        if include_config:
+            meta += " | <span id=\"show-config\" class=\"clickable\">View config</span>"
+        meta += "</div>"
+    html = (
+        html.replace("__SCHEDULE__", schedule_json)
+        .replace("__CONFIG__", cfg_json)
+        .replace("__META__", meta)
+    )
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(html)
 
@@ -2173,6 +2203,7 @@ def main() -> None:
             if not ans.strip().lower().startswith("y"):
                 print("Exiting due to duplicates.")
                 return
+    fresh = not skip_solve
     if skip_solve:
         with open(out_path, "r", encoding="utf-8") as fh:
             result = json.load(fh)
@@ -2192,7 +2223,8 @@ def main() -> None:
 
     if show_analysis:
         report_analysis(result, cfg)
-        generate_html(result, cfg, html_path)
+        gen_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        generate_html(result, cfg, html_path, gen_time, fresh)
         print(f"{html_path} generated")
 
 

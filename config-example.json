@@ -2,7 +2,8 @@
   "settings": {
     "maxTeacherSlots": [6, "Maximum number of consecutive lessons a teacher can teach. High value allows long stretches, low value forces more breaks."],
     "maxStudentSlots": [6, "Maximum number of consecutive lessons a student can attend. Large number means longer school days without rest."],
-    "objective": ["total", "Optimisation goal: 'total' minimises all penalties, 'fair' balances penalties between teachers and students."]
+    "objective": ["total", "Optimisation goal: 'total' minimises all penalties, 'fair' balances penalties between teachers and students."],
+    "teacherAsStudents": [15, "How many student opinions a teacher counts for when calculating penalties"]
   },
   "defaults": {
     "teacherImportance": [20, "Default teacher weight in penalties. Higher value makes gaps for teachers more expensive."],
@@ -14,10 +15,10 @@
     "avoidConsecutive": [true, "Discourage scheduling the same subject on back-to-back days."]
   },
   "penalties": {
-    "gapTeacher": [2, "Penalty per empty slot in a teacher schedule. Higher values reduce teacher idle time."],
-    "gapStudent": [10, "Penalty per empty slot in a student day. Raise to keep days compact."],
+    "gapTeacher": [30, "Penalty per empty slot in a teacher schedule. Higher values reduce teacher idle time."],
+    "gapStudent": [100, "Penalty per empty slot in a student day. Raise to keep days compact."],
     "unoptimalSlot": [1, "Penalty for each slot away from the preferred time of a subject. Larger value pushes classes toward their optimal slot."],
-    "consecutiveClass": [15, "Penalty when a subject appears on consecutive days. High value spreads classes apart."]
+    "consecutiveClass": [10, "Penalty when a subject appears on consecutive days. High value spreads classes apart."]
   },
 
   "days": [

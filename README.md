@@ -90,6 +90,7 @@ The configuration file is divided into several sections. Values are stored as `[
 - **maxTeacherSlots** – maximum number of consecutive lessons a teacher can teach. A high number allows long stretches while a low one enforces frequent breaks. *(default 8)*
 - **maxStudentSlots** – maximum consecutive lessons for students. Large numbers mean longer days, small numbers insert more rest. *(default 6)*
 - **objective** – `"total"` minimises the sum of all penalties; `"fair"` tries to distribute penalties evenly. *(default `"total"`)*
+- **teacherAsStudents** – how many student opinions one teacher counts as when calculating penalties. *(default 15)*
 
 ### defaults (required)
 - **teacherImportance** – base weight for teachers. Higher values make teacher gaps more costly. *(default 20)*
@@ -101,10 +102,10 @@ The configuration file is divided into several sections. Values are stored as `[
 - **avoidConsecutive** – discourage placing the same subject on neighbouring days. *(default `true`)*
 
 ### penalties (required)
-- **gapTeacher** – penalty for idle teacher slots. High values reduce teacher free time, low values allow it. *(default 2)*
-- **gapStudent** – penalty for gaps in a student day. Raise to keep days compact. *(default 10)*
+- **gapTeacher** – penalty for idle teacher slots. High values reduce teacher free time, low values allow it. *(default 30)*
+- **gapStudent** – penalty for gaps in a student day. Raise to keep days compact. *(default 100)*
 - **unoptimalSlot** – penalty for each slot away from a subject's preferred time. Bigger values keep lessons closer to their optimum. *(default 1)*
-- **consecutiveClass** – penalty when the same subject appears on consecutive days. High numbers spread classes apart. *(default 15)*
+- **consecutiveClass** – penalty when the same subject appears on consecutive days. High numbers spread classes apart. *(default 10)*
 
 ### days
 List the days of teaching and available lesson numbers:

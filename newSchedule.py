@@ -947,6 +947,10 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
     settings = cfg.get("settings", {})
     teacher_as_students = settings.get("teacherAsStudents", [15])[0]
 
+    penalties = cfg.get("penalties", {})
+    teacher_streak_list = penalties.get("teacherLessonStreak", [[]])[0]
+    student_streak_list = penalties.get("studentLessonStreak", [[]])[0]
+
     teacher_slots = {
         t: {day["name"]: set() for day in cfg["days"]} for t in teacher_names
     }

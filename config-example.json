@@ -93,7 +93,7 @@
   ],
 
   "lessons": [
-    ["Monday", 1, "DP1_English_Literature_SL", "Room #002", ["Marie", "Jane"]]
+    ["Monday", 1, "DP1_English_Literature_SL", "Room #002", ["Marie", "Jane"], 2]
   ],
 
   "model": {

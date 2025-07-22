@@ -79,8 +79,14 @@ def load_config(path: str = "schedule-config.json") -> Dict[str, Any]:
     lessons_parsed = []
     for item in data.get("lessons", []):
         if not isinstance(item, list) or len(item) < 5:
-            raise ValueError("Lesson entry must contain day, slot, subject, cabinet(s) and teachers")
-        day, slot, subject_id, cabinet, teachers = item
+            raise ValueError(
+                "Lesson entry must contain day, slot, subject, cabinet(s) and teachers"
+            )
+        if len(item) == 6:
+            day, slot, subject_id, cabinet, teachers, length = item
+        else:
+            day, slot, subject_id, cabinet, teachers = item
+            length = None
         if isinstance(cabinet, str):
             cabinet = [cabinet]
         lessons_parsed.append(
@@ -88,6 +94,7 @@ def load_config(path: str = "schedule-config.json") -> Dict[str, Any]:
                 "day": day,
                 "slot": int(slot),
                 "subject": subject_id,
+                "length": int(length) if length is not None else None,
                 "cabinets": cabinet,
                 "teachers": list(teachers),
             }
@@ -130,12 +137,22 @@ def _prepare_fixed_classes(
     cabinets = cfg.get("cabinets", {})
     subjects = cfg["subjects"]
 
-    used_idx: Dict[str, int] = defaultdict(int)
+    # track available class indices by length for each subject
+    length_map: Dict[str, Dict[int, List[int]]] = {}
+    remaining: Dict[str, List[int]] = {}
+    for sid, subj in subjects.items():
+        lm: Dict[int, List[int]] = defaultdict(list)
+        for idx, ln in enumerate(subj.get("classes", [])):
+            lm[ln].append(idx)
+        length_map[sid] = lm
+        remaining[sid] = list(range(len(subj.get("classes", []))))
+
     fixed: Dict[tuple, Dict[str, Any]] = {}
     for entry in lessons:
         day = entry["day"]
         slot = int(entry["slot"])
         sid = entry["subject"]
+        length_override = entry.get("length")
         rooms = entry["cabinets"]
         if isinstance(rooms, str):
             rooms = [rooms]
@@ -149,10 +166,34 @@ def _prepare_fixed_classes(
             raise ValueError(f"Unknown subject '{sid}' in lesson {entry}")
         subj = subjects[sid]
 
-        idx = used_idx[sid]
-        if idx >= len(subj.get("classes", [])):
-            raise ValueError(f"Too many fixed lessons for subject {sid}")
-        length = subj["classes"][idx]
+        if length_override is not None:
+            length = int(length_override)
+            choices = length_map[sid].get(length)
+            while choices and choices[0] not in remaining[sid]:
+                choices.pop(0)
+            if not choices:
+                raise ValueError(
+                    f"No unused class of length {length} for subject {sid}"
+                )
+            idx = choices.pop(0)
+            remaining[sid].remove(idx)
+        else:
+            if not remaining[sid]:
+                raise ValueError(f"Too many fixed lessons for subject {sid}")
+            last_slot = max(day_lookup[day])
+            idx = None
+            for cand in list(remaining[sid]):
+                cand_len = subj["classes"][cand]
+                if slot + cand_len - 1 <= last_slot:
+                    idx = cand
+                    break
+            if idx is None:
+                raise ValueError(
+                    f"Lesson for {sid} starting at {day} slot {slot} exceeds day length"
+                )
+            remaining[sid].remove(idx)
+            length = subj["classes"][idx]
+            length_map[sid][length].remove(idx)
         last_slot = max(day_lookup[day])
         if slot + length - 1 > last_slot:
             raise ValueError(
@@ -216,7 +257,6 @@ def _prepare_fixed_classes(
             "cabinets": rooms,
             "teachers": tlist,
         }
-        used_idx[sid] += 1
 
     return fixed
 

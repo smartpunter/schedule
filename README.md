@@ -124,7 +124,8 @@ Describe each subject with its teachers and lesson structure.
 - `teachers` – teachers who can teach the subject
 - `primaryTeachers` – teachers that must be present
 - `requiredTeachers` – number of teachers needed for each lesson
-- `optimalSlot` – preferred starting slot
+- `requiredCabinets` – number of rooms needed for each lesson
+ - `optimalSlot` – preferred starting slot
 - `classes` – list of lesson lengths that must occur on separate days
 - `allowPermutations` – allow the lesson order to change
 - `avoidConsecutive` – try not to schedule on back-to-back days

@@ -113,6 +113,7 @@ def _prepare_fixed_classes(
     cfg: Dict[str, Any],
     teacher_limits: Dict[str, Dict[str, Set[int]]],
     teacher_map: Dict[str, Set[str]],
+    student_limits: Dict[str, Dict[str, Set[int]]],
     students_by_subject: Dict[str, List[str]],
     student_size: Dict[str, int],
 ) -> Dict[tuple, Dict[str, Any]]:
@@ -178,6 +179,12 @@ def _prepare_fixed_classes(
                     f"Teacher {t} not available at {day} slot {slot} for subject {sid}"
                 )
 
+        for stu in students_by_subject.get(sid, []):
+            if slot not in student_limits[stu][day]:
+                raise ValueError(
+                    f"Student {stu} not available at {day} slot {slot} for subject {sid}"
+                )
+
         primary = set(subj.get("primaryTeachers", []))
         if primary and not primary.issubset(set(tlist)):
             missing = ", ".join(sorted(primary - set(tlist)))
@@ -240,17 +247,47 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
             avail[dname] = allowed
         teacher_limits[name] = avail
 
+    # calculate allowed slots for every student
+    student_limits: Dict[str, Dict[str, Set[int]]] = {}
     students_by_subject: Dict[str, List[str]] = {}
     student_size: Dict[str, int] = {}
     student_arrive = {s["name"]: bool(s.get("arriveEarly", True)) for s in students}
     for stu in students:
         name = stu["name"]
+        allow = stu.get("allowedSlots")
+        forbid = stu.get("forbiddenSlots")
+        avail: Dict[str, Set[int]] = {}
+        for day in days:
+            dname = day["name"]
+            slots_set = set(day["slots"])
+            if allow is not None:
+                if dname in allow:
+                    al = allow[dname]
+                    allowed = slots_set.copy() if not al else set(al)
+                else:
+                    allowed = set()
+            else:
+                allowed = slots_set.copy()
+            if forbid is not None and dname in forbid:
+                fb = forbid[dname]
+                if not fb:
+                    allowed = set()
+                else:
+                    allowed -= set(fb)
+            avail[dname] = allowed
+        student_limits[name] = avail
+
         student_size[name] = int(stu.get("group", 1))
         for sid in stu["subjects"]:
             students_by_subject.setdefault(sid, []).append(name)
 
     fixed_classes = _prepare_fixed_classes(
-        cfg, teacher_limits, teacher_map, students_by_subject, student_size
+        cfg,
+        teacher_limits,
+        teacher_map,
+        student_limits,
+        students_by_subject,
+        student_size,
     )
 
     model = cp_model.CpModel()
@@ -346,6 +383,14 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                             )
                         ]
                         if len(available) < required:
+                            continue
+                        if any(
+                            not all(
+                                s in student_limits[stu][dname]
+                                for s in range(start, start + length)
+                            )
+                            for stu in enrolled
+                        ):
                             continue
                         var = model.NewBoolVar(f"x_{sid}_{idx}_{dname}_{start}")
                         diff = abs(start - subj.get("optimalSlot", 0))
@@ -553,6 +598,8 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                     model.AddMaxEquality(var, covering)
                 else:
                     var = model.NewBoolVar(f"stud_{sname}_{dname}_{slot}")
+                    model.Add(var == 0)
+                if slot not in student_limits[sname][dname]:
                     model.Add(var == 0)
                 student_slot[(sname, dname, slot)] = var
 

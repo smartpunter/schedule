@@ -68,10 +68,24 @@
   },
 
   "students": [
-    { "name": "Mike",      "subjects": ["DP1_English_Literature_SL", "DP1_Mathematics_HL"] },
-    { "name": "Aleksander", "subjects": ["DP1_English_Literature_SL", "DP1_Mathematics_SL"] },
+    {
+      "name": "Mike",
+      "subjects": ["DP1_English_Literature_SL", "DP1_Mathematics_HL"],
+      "allowedSlots": { "Monday": [], "Wednesday": [0,1,2,3] }
+    },
+    {
+      "name": "Aleksander",
+      "subjects": ["DP1_English_Literature_SL", "DP1_Mathematics_SL"],
+      "forbiddenSlots": { "Friday": [5,6] }
+    },
     { "arriveEarly": false, "name": "Ekaterina",  "subjects": ["DP1_Mathematics_HL", "DP1_Chemistry_SL"] },
-    { "importance": 30, "name": "John", "subjects": ["DP1_Mathematics_HL", "DP1_Chemistry_HL"] },
+    {
+      "importance": 30,
+      "name": "John",
+      "subjects": ["DP1_Mathematics_HL", "DP1_Chemistry_HL"],
+      "allowedSlots": { "Tuesday": [] },
+      "forbiddenSlots": { "Monday": [0] }
+    },
     { "group": 10, "name": "Other students",
       "subjects": ["DP1_English_Literature_SL", "DP1_Mathematics_SL", "DP1_Chemistry_SL" ] }
   ],

@@ -141,6 +141,8 @@ List of students with their subjects and optional settings.
 - `group` – number of students if this is a group entry
 - `importance` – overrides the default student weight
 - `arriveEarly` – whether the student arrives from the first slot
+- `allowedSlots` – specific slots when the student can attend
+- `forbiddenSlots` – slots the student cannot attend
 
 ### lessons
 Optional fixed lessons specified as `[day, slot, subject, room, [teachers]]` to lock classes to certain times.

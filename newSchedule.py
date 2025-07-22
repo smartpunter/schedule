@@ -170,6 +170,11 @@ def _prepare_fixed_classes(
                 raise ValueError(f"Unknown cabinet '{room}' in lesson {entry}")
             if room not in subj.get("cabinets", list(cabinets)):
                 raise ValueError(f"Cabinet '{room}' not allowed for subject {sid}")
+            allowed = cabinets[room].get("allowedSubjects")
+            if allowed and sid not in allowed:
+                raise ValueError(
+                    f"Subject {sid} not permitted in cabinet '{room}'"
+                )
         total_capacity = sum(cabinets[r]["capacity"] for r in rooms)
         if total_capacity < class_size:
             raise ValueError(
@@ -343,7 +348,12 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
             raise ValueError(f"No teacher available for subject {sid}")
         enrolled = students_by_subject.get(sid, [])
         class_size = sum(student_size[s] for s in enrolled)
-        allowed_cabinets = [c for c in subj.get("cabinets", list(cabinets))]
+        allowed_cabinets = [
+            c
+            for c in subj.get("cabinets", list(cabinets))
+            if not cabinets.get(c, {}).get("allowedSubjects")
+            or sid in cabinets[c]["allowedSubjects"]
+        ]
         required_cabs = int(subj.get("requiredCabinets", 1))
         if len(allowed_cabinets) < required_cabs:
             raise ValueError(
@@ -1992,7 +2002,10 @@ function showStudent(idx,fromModal=false){
 function showCabinet(name,fromModal=false){
  const info=configData.cabinets[name]||{};
   let html='<h2>Room: '+name+'</h2>'+makeGrid(cls=>(cls.cabinets||[]).includes(name));
- const params=[[ 'Capacity',info.capacity||'-' ]];
+ const params=[
+  ['Capacity',info.capacity||'-'],
+  ['Allowed subjects',(info.allowedSubjects||[]).join(', ')||'-']
+ ];
  html+='<h3>Configuration</h3>'+makeParamTable(params);
  openModal(html,!fromModal);
 }

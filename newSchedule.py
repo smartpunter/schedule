@@ -1839,7 +1839,7 @@ def main() -> None:
     student_dups = _detect_duplicates(
         cfg.get("students", []), ["subjects"]
     )
-    if student_dups:
+    if student_dups and not skip_solve:
         print("Duplicate entities detected:")
         for names in student_dups:
             print(f"Students: {', '.join(names)}")

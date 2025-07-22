@@ -1,7 +1,5 @@
 # School Schedule Optimizer
 
-## About the project
-
 This utility creates a timetable for a small (or maybe even big, if you have computing resources to find the solution) school using [Google OR-Tools](https://developers.google.com/optimization/). It reads a JSON configuration that lists subjects, teachers, students and available rooms, then searches for an arrangement of lessons with the smallest penalty score.
 
 **Positives**
@@ -87,8 +85,6 @@ Press **Ctrl+C** to stop early; the best solution so far will be saved. The sear
 The configuration file is divided into several sections. Values are stored as `[value, "description"]` pairs. The **settings**, **defaults** and **penalties** blocks are required. The **model** block is optional and should only be changed if you understand the effects.
 
 ### settings (required)
-- **maxTeacherSlots** – maximum number of consecutive lessons a teacher can teach. A high number allows long stretches while a low one enforces frequent breaks. *(default 8)*
-- **maxStudentSlots** – maximum consecutive lessons for students. Large numbers mean longer days, small numbers insert more rest. *(default 6)*
 - **objective** – `"total"` minimises the sum of all penalties; `"fair"` tries to distribute penalties evenly. *(default `"total"`)*
 - **teacherAsStudents** – how many student opinions one teacher counts as when calculating penalties. *(default 15)*
 
@@ -106,6 +102,8 @@ The configuration file is divided into several sections. Values are stored as `[
 - **gapStudent** – penalty for gaps in a student day. Raise to keep days compact. *(default 100)*
 - **unoptimalSlot** – penalty for each slot away from a subject's preferred time. Bigger values keep lessons closer to their optimum. *(default 1)*
 - **consecutiveClass** – penalty when the same subject appears on consecutive days. High numbers spread classes apart. *(default 10)*
+- **teacherLessonStreak** – array of penalties based on consecutive lessons for teachers. The last value applies to any longer streak.
+- **studentLessonStreak** – similar penalties for students based on consecutive lessons.
 
 ### days
 List the days of teaching and available lesson numbers:
@@ -164,8 +162,7 @@ Optional fixed lessons specified as `[day, slot, subject, room, [teachers]]` to 
 ## Changelog
 
 ### 1.1.0
-- Added penalties for consecutive classes and limits on teacher slots
-- Introduced fixed lessons and validation of required teachers
+- Added penalties for consecutive classes and lesson streaks
 - Automatic worker detection and improved defaults
 - Expanded documentation with step-by-step instructions
 

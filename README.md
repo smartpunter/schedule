@@ -112,9 +112,10 @@ List the days of teaching and available lesson numbers:
 ```
 
 ### cabinets
-Rooms where classes may take place. Each entry defines a capacity:
+Rooms where classes may take place. Each entry defines a capacity and optional
+list of subjects allowed in that room:
 ```json
-"Room 101": {"capacity": 20}
+"Room 101": {"capacity": 20, "allowedSubjects": ["Chemistry"]}
 ```
 
 ### subjects

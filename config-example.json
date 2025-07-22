@@ -32,8 +32,8 @@
   "cabinets": {
     "Room #001": { "capacity": 20 },
     "Room #002": { "capacity": 20 },
-    "Room #003": { "capacity": 10 },
-    "Room #004": { "capacity": 5  }
+    "Room #003": { "capacity": 10, "allowedSubjects": ["DP1_Chemistry_SL"] },
+    "Room #004": { "capacity": 5,  "allowedSubjects": ["DP1_Chemistry_HL"] }
   },
 
   "subjects": {

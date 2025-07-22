@@ -117,6 +117,7 @@ list of subjects allowed in that room:
 ```json
 "Room 101": {"capacity": 20, "allowedSubjects": ["Chemistry"]}
 ```
+Optional field `printName` overrides the key when shown in reports.
 
 ### subjects
 Describe each subject with its teachers and lesson structure.
@@ -131,6 +132,7 @@ Describe each subject with its teachers and lesson structure.
 - `allowPermutations` – allow the lesson order to change
 - `avoidConsecutive` – try not to schedule on back-to-back days
 - `cabinets` – rooms where the lesson may take place
+- `printName` – optional name to display in reports
 
 ### teachers
 Mapping of teacher names to optional settings.
@@ -138,6 +140,7 @@ Mapping of teacher names to optional settings.
 - `arriveEarly` – whether the teacher is present from slot `0`
 - `allowedSlots` – specific slots when the teacher can work
 - `forbiddenSlots` – slots the teacher cannot work
+- `printName` – optional name used in reports
 
 ### students
 List of students with their subjects and optional settings.

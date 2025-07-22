@@ -1383,9 +1383,15 @@ def report_analysis(schedule: Dict[str, Any], cfg: Dict[str, Any]) -> None:
     students = analyse_students(schedule)
     subjects = analyse_subjects(schedule, cfg)
 
-    teacher_names = {t["name"]: t.get("name", t["name"]) for t in cfg.get("teachers", [])}
+    teacher_names = {
+        t["name"]: t.get("printName", t.get("name", t["name"]))
+        for t in cfg.get("teachers", [])
+    }
     student_names = {s["name"]: s.get("name", s["name"]) for s in cfg.get("students", [])}
-    subject_names = {sid: info.get("name", sid) for sid, info in cfg.get("subjects", {}).items()}
+    subject_names = {
+        sid: info.get("printName", info.get("name", sid))
+        for sid, info in cfg.get("subjects", {}).items()
+    }
 
     print("=== Teachers ===")
     print(_teacher_table(teachers, teacher_names, subject_names))
@@ -1399,7 +1405,10 @@ def report_analysis(schedule: Dict[str, Any], cfg: Dict[str, Any]) -> None:
 
 def render_schedule(schedule: Dict[str, Any], cfg: Dict[str, Any]) -> None:
     """Print schedule grouped by day and slot."""
-    subject_names = {sid: info.get("name", sid) for sid, info in cfg.get("subjects", {}).items()}
+    subject_names = {
+        sid: info.get("printName", info.get("name", sid))
+        for sid, info in cfg.get("subjects", {}).items()
+    }
     student_size = {s["name"]: int(s.get("group", 1)) for s in cfg.get("students", [])}
 
     print()
@@ -1422,7 +1431,7 @@ def render_schedule(schedule: Dict[str, Any], cfg: Dict[str, Any]) -> None:
             print(f"{header}:")
             for cls in classes:
                 subj = subject_names.get(cls["subject"], cls["subject"])
-                teacher = ", ".join(cls.get("teachers", []))
+                teacher = ", ".join(teacher_names.get(t, t) for t in cls.get("teachers", []))
                 size = cls.get("size", len(cls.get("students", [])))
                 length = cls.get("length", 1)
                 start = cls.get("start", idx)
@@ -1532,15 +1541,20 @@ window.onclick=e=>{if(e.target==modal)modal.style.display='none';};
 const studentSize={};
 (configData.students||[]).forEach((s,i)=>{studentSize[s.name]=s.group||1;});
 const teacherIndex={};
-(configData.teachers||[]).forEach((t,i)=>{teacherIndex[t.name]=i;});
+const teacherDisplay={};
+(configData.teachers||[]).forEach((t,i)=>{teacherIndex[t.name]=i;teacherDisplay[t.name]=t.printName||t.name;});
 const studentIndex={};
 (configData.students||[]).forEach((s,i)=>{studentIndex[s.name]=i;});
+const subjectDisplay={};
+Object.keys(configData.subjects||{}).forEach(id=>{const info=configData.subjects[id]||{};subjectDisplay[id]=info.printName||info.name||id;});
+const cabinetDisplay={};
+Object.keys(configData.cabinets||{}).forEach(id=>{const info=configData.cabinets[id]||{};cabinetDisplay[id]=info.printName||id;});
 const teacherSet=new Set(Object.keys(teacherIndex));
 const studentSet=new Set(Object.keys(studentIndex));
 function personLink(name,role){
   if(role==='teacher' || (!role && teacherSet.has(name) && !studentSet.has(name))){
     const id=teacherIndex[name];
-    return '<span class="clickable teacher" data-id="'+id+'">'+name+'</span>';
+    return '<span class="clickable teacher" data-id="'+id+'">'+(teacherDisplay[name]||name)+'</span>';
   }
   if(role==='student' || (!role && studentSet.has(name) && !teacherSet.has(name))){
     const id=studentIndex[name];
@@ -1551,11 +1565,12 @@ function personLink(name,role){
 function teacherSpan(name,subj){
   const id=teacherIndex[name];
   const prim=(configData.subjects[subj]||{}).primaryTeachers||[];
-  const inner=prim.includes(name)?'<strong>'+name+'</strong>':name;
+  const disp=teacherDisplay[name]||name;
+  const inner=prim.includes(name)?'<strong>'+disp+'</strong>':disp;
   return '<span class="clickable teacher" data-id="'+id+'">'+inner+'</span>';
 }
 function cabinetSpan(name){
-  return '<span class="clickable cabinet" data-id="'+name+'">'+name+'</span>';
+  return '<span class="clickable cabinet" data-id="'+name+'">'+(cabinetDisplay[name]||name)+'</span>';
 }
 function makeParamTable(list){
   let html='<div class="param-table">';
@@ -1632,7 +1647,7 @@ function buildTable(){
      slot.classes.forEach(cls=>{
        const block=document.createElement('div');
        block.className='class-block';
-       const subj=(configData.subjects[cls.subject]||{}).name||cls.subject;
+       const subj=subjectDisplay[cls.subject]||cls.subject;
        const part=(cls.length>1)?((i-cls.start+1)+'/'+cls.length):'1/1';
        const l1=document.createElement('div');
        l1.className='class-line';
@@ -1695,7 +1710,7 @@ function makeGrid(filterFn){
      const slot=day.slots.find(s=>s.slotIndex==i)||{classes:[]};
      html+='<div class="cell">';
      slot.classes.filter(filterFn).forEach(cls=>{
-       const subj=(configData.subjects[cls.subject]||{}).name||cls.subject;
+       const subj=subjectDisplay[cls.subject]||cls.subject;
        const part=(cls.length>1)?((i-cls.start+1)+'/'+cls.length):'1/1';
        const tNames=(cls.teachers||[]).map(t=>teacherSpan(t,cls.subject)).join(', ');
         const rooms=(cls.cabinets||[]).map(c=>cabinetSpan(c)).join(', ');
@@ -1725,7 +1740,7 @@ function showSlot(day,idx,fromModal=false){
  let html='<h2>'+day+' lesson '+(idx+1)+'</h2><p>Total penalty: '+total.toFixed(1)+'</p>';
  html+='<div class="slot-detail">';
  slot.classes.forEach((cls)=>{
-   const subj=(configData.subjects[cls.subject]||{}).name||cls.subject;
+   const subj=subjectDisplay[cls.subject]||cls.subject;
    const part=(cls.length>1)?((idx-cls.start+1)+'/'+cls.length):'1/1';
    html+='<div class="slot-class">'+
      '<div class="detail-line">'+
@@ -1894,12 +1909,12 @@ function buildTeachers(){
    let subjHtml='';
    Object.keys(item.stat.subjects).forEach(sid=>{
      const s=item.stat.subjects[sid];
-     const name=(configData.subjects[sid]||{}).name||sid;
+    const name=subjectDisplay[sid]||sid;
      subjHtml+='<div class="subject-line"><span class="subject-name clickable subject" data-id="'+sid+'">'+name+'</span>'+
        '<span class="subject-count">'+s.count+'</span>'+
        '<span class="subject-extra">'+s.avg+'</span></div>';
    });
-   row.innerHTML='<span class="person-name clickable teacher" data-id="'+teacherIndex[item.info.name]+'">'+item.info.name+'</span>'+
+   row.innerHTML='<span class="person-name clickable teacher" data-id="'+teacherIndex[item.info.name]+'">'+(teacherDisplay[item.info.name]||item.info.name)+'</span>'+
      '<span class="person-info">'+pr+'<br>'+arr+'</span>'+
      '<span class="person-pen">'+item.stat.penalty.toFixed(1)+'</span>'+
      '<span class="person-hours">'+item.stat.hours+'</span>'+
@@ -1926,7 +1941,7 @@ function buildStudents(){
    let subjHtml='';
    Object.keys(item.stat.subjects).forEach(sid=>{
      const s=item.stat.subjects[sid];
-     const name=(configData.subjects[sid]||{}).name||sid;
+    const name=subjectDisplay[sid]||sid;
      subjHtml+='<div class="subject-line"><span class="subject-name clickable subject" data-id="'+sid+'">'+name+'</span>'+
        '<span class="subject-count">'+s.count+'</span>'+
        '<span class="subject-extra">'+(s.penalty||0).toFixed(1)+'</span></div>';
@@ -1944,6 +1959,7 @@ function buildStudents(){
 function showTeacher(idx,fromModal=false){
  const info=(configData.teachers||[])[idx]||{};
  const name=info.name||'';
+ const display=teacherDisplay[name]||name;
  const defImp=(configData.defaults.teacherImportance||[1])[0];
  const imp=info.importance!==undefined?info.importance:defImp;
  const boldImp=imp!==defImp;
@@ -1951,11 +1967,11 @@ function showTeacher(idx,fromModal=false){
  const full=computeTeacherInfo(name);
  const defArr=(configData.defaults.teacherArriveEarly||[false])[0];
  const boldArr=full.arrive!==defArr;
- let html='<h2>Teacher: '+name+'</h2>'+makeGrid(cls=>cls.teachers.includes(name));
+ let html='<h2>Teacher: '+display+'</h2>'+makeGrid(cls=>cls.teachers.includes(name));
  html+='<h3>Subjects</h3><table class="info-table"><tr><th>Subject</th><th>Classes</th><th>Avg size</th></tr>';
  Object.keys(full.subjects).forEach(sid=>{
    const s=full.subjects[sid];
-   const sname=(configData.subjects[sid]||{}).name||sid;
+   const sname=subjectDisplay[sid]||sid;
    html+='<tr><td><span class="clickable subject" data-id="'+sid+'">'+sname+'</span></td><td class="num">'+s.count+'</td><td class="num">'+s.avg+'</td></tr>';});
  html+='</table>';
  const params=[
@@ -1983,9 +1999,9 @@ function showStudent(idx,fromModal=false){
  const full=computeStudentInfo(name);
  const defArr=(configData.defaults.studentArriveEarly||[true])[0];
  const boldArr=full.arrive!==defArr;
- let html='<h2>Student: '+name+'</h2>'+makeGrid(cls=>cls.students.includes(name));
+let html='<h2>Student: '+name+'</h2>'+makeGrid(cls=>cls.students.includes(name));
  html+='<h3>Subjects</h3><table class="info-table"><tr><th>Subject</th><th>Classes</th><th>Penalty</th></tr>';
- Object.keys(full.subjects).forEach(sid=>{const s=full.subjects[sid];const sn=(configData.subjects[sid]||{}).name||sid;html+='<tr><td><span class="clickable subject" data-id="'+sid+'">'+sn+'</span></td><td class="num">'+s.count+'</td><td class="num">'+(s.penalty||0).toFixed(1)+'</td></tr>';});
+Object.keys(full.subjects).forEach(sid=>{const s=full.subjects[sid];const sn=subjectDisplay[sid]||sid;html+='<tr><td><span class="clickable subject" data-id="'+sid+'">'+sn+'</span></td><td class="num">'+s.count+'</td><td class="num">'+(s.penalty||0).toFixed(1)+'</td></tr>';});
  html+='</table>';
  const params=[
  ['Group size',group,boldGroup],
@@ -2001,10 +2017,11 @@ function showStudent(idx,fromModal=false){
 
 function showCabinet(name,fromModal=false){
  const info=configData.cabinets[name]||{};
-  let html='<h2>Room: '+name+'</h2>'+makeGrid(cls=>(cls.cabinets||[]).includes(name));
+  const disp=cabinetDisplay[name]||name;
+  let html='<h2>Room: '+disp+'</h2>'+makeGrid(cls=>(cls.cabinets||[]).includes(name));
  const params=[
   ['Capacity',info.capacity||'-'],
-  ['Allowed subjects',(info.allowedSubjects||[]).join(', ')||'-']
+  ['Allowed subjects',(info.allowedSubjects||[]).map(s=>subjectDisplay[s]||s).join(', ')||'-']
  ];
  html+='<h3>Configuration</h3>'+makeParamTable(params);
  openModal(html,!fromModal);
@@ -2013,9 +2030,10 @@ function showCabinet(name,fromModal=false){
 function showSubject(id,fromModal=false){
  const subj=configData.subjects[id]||{};
  const defOpt=(configData.defaults.optimalSlot||[0])[0];
- let html='<h2>Subject: '+(subj.name||id)+'</h2>'+makeGrid(cls=>cls.subject===id);
+ const disp=subjectDisplay[id]||id;
+ let html='<h2>Subject: '+disp+'</h2>'+makeGrid(cls=>cls.subject===id);
 html+='<h3>Teachers</h3><table class="info-table"><tr><th>Name</th></tr>';
-(configData.teachers||[]).forEach((t,i)=>{if((t.subjects||[]).includes(id)){const bold=(subj.primaryTeachers||[]).includes(t.name);const nm=bold?'<strong>'+t.name+'</strong>':t.name;html+='<tr><td><span class="clickable teacher" data-id="'+i+'">'+nm+'</span></td></tr>';}});
+(configData.teachers||[]).forEach((t,i)=>{if((t.subjects||[]).includes(id)){const bold=(subj.primaryTeachers||[]).includes(t.name);const nm=bold?'<strong>'+(teacherDisplay[t.name]||t.name)+'</strong>':(teacherDisplay[t.name]||t.name);html+='<tr><td><span class="clickable teacher" data-id="'+i+'">'+nm+'</span></td></tr>';}});
  html+='</table><h3>Students</h3><table class="info-table"><tr><th>Name</th><th>Group</th></tr>';
  (configData.students||[]).forEach((s,i)=>{if((s.subjects||[]).includes(id)){html+='<tr><td><span class="clickable student" data-id="'+i+'">'+s.name+'</span></td><td class="num">'+(studentSize[s.name]||1)+'</td></tr>';}});
  html+='</table>';
@@ -2038,8 +2056,8 @@ html+='<h3>Teachers</h3><table class="info-table"><tr><th>Name</th></tr>';
   ['Avoid consecutive',avoid?'yes':'no',boldAvoid],
    ['Required teachers',req,boldReq],
    ['Required cabinets',reqCab,boldReqCab],
-   ['Cabinets',(subj.cabinets||[]).join(', ')||'-'],
-  ['Primary teachers',(subj.primaryTeachers||[]).join(', ')||'-']
+   ['Cabinets',(subj.cabinets||[]).map(c=>cabinetDisplay[c]||c).join(', ')||'-'],
+  ['Primary teachers',(subj.primaryTeachers||[]).map(t=>teacherDisplay[t]||t).join(', ')||'-']
  ];
  html+='<h3>Configuration</h3>'+makeParamTable(params);
  openModal(html,!fromModal);

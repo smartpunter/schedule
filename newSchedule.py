@@ -170,10 +170,11 @@ def _prepare_fixed_classes(
                 raise ValueError(f"Unknown cabinet '{room}' in lesson {entry}")
             if room not in subj.get("cabinets", list(cabinets)):
                 raise ValueError(f"Cabinet '{room}' not allowed for subject {sid}")
-            if cabinets[room]["capacity"] < class_size:
-                raise ValueError(
-                    f"Cabinet '{room}' too small for subject {sid} (size {class_size})"
-                )
+        total_capacity = sum(cabinets[r]["capacity"] for r in rooms)
+        if total_capacity < class_size:
+            raise ValueError(
+                f"Cabinets {rooms} too small for subject {sid} (size {class_size})"
+            )
 
         required = int(subj.get("requiredTeachers", 1))
         if len(tlist) != required:
@@ -342,12 +343,17 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
             raise ValueError(f"No teacher available for subject {sid}")
         enrolled = students_by_subject.get(sid, [])
         class_size = sum(student_size[s] for s in enrolled)
-        allowed_cabinets = [
-            c
-            for c in subj.get("cabinets", list(cabinets))
-            if cabinets[c]["capacity"] >= class_size
-        ]
+        allowed_cabinets = [c for c in subj.get("cabinets", list(cabinets))]
         required_cabs = int(subj.get("requiredCabinets", 1))
+        if len(allowed_cabinets) < required_cabs:
+            raise ValueError(
+                f"Subject {sid} needs {required_cabs} cabinets but only {len(allowed_cabinets)} provided"
+            )
+        caps = sorted((cabinets[c]["capacity"] for c in allowed_cabinets), reverse=True)
+        if sum(caps[:required_cabs]) < class_size:
+            raise ValueError(
+                f"Available cabinets for {sid} cannot fit class size {class_size}"
+            )
         class_lengths = subj["classes"]
 
         for idx, length in enumerate(class_lengths):
@@ -483,6 +489,13 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
             if not cv_list or len(cv_list) < required_cabs:
                 raise RuntimeError(f"No cabinet for subject {sid} class {idx}")
             model.Add(sum(cv_list) == required_cabs)
+            model.Add(
+                sum(
+                    cabinets[c]["capacity"] * cabinet_choice[(sid, idx, c)]
+                    for c in allowed_cabinets
+                )
+                >= class_size
+            )
             allowed_cabinet_map[key] = allowed_cabinets
             # create interval objects for candidates
             for cand in cand_list:

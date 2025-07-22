@@ -307,13 +307,13 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
     gap_teacher_val = penalties.get("gapTeacher", [0])[0]
     gap_student_val = penalties.get("gapStudent", [0])[0]
     consecutive_pen_val = penalties.get("consecutiveClass", [0])[0]
+    teacher_streak_list = penalties.get("teacherLessonStreak", [[]])[0]
+    student_streak_list = penalties.get("studentLessonStreak", [[]])[0]
     settings = cfg.get("settings", {})
     teacher_as_students = settings.get("teacherAsStudents", [15])[0]
     defaults = cfg.get("defaults", {})
     default_permutations = defaults.get("permutations", [True])[0]
     default_avoid_consecutive = defaults.get("avoidConsecutive", [True])[0]
-    max_teacher_slots = settings.get("maxTeacherSlots", [0])[0]
-    max_student_slots = settings.get("maxStudentSlots", [0])[0]
     default_student_imp = defaults.get("studentImportance", [0])[0]
     default_teacher_imp = defaults.get("teacherImportance", [1])[0]
     student_importance = {
@@ -667,16 +667,6 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                 model.Add(g + cur <= 1)
                 model.Add(g >= before + after + (1 - cur) - 2)
                 teacher_gap_vars.append((g, t))
-            if max_teacher_slots > 0:
-                win = max_teacher_slots + 1
-                for start in range(len(slots) - win + 1):
-                    model.Add(
-                        sum(
-                            teacher_slot[(t, dname, slots[k])] for k in range(start, start + win)
-                        )
-                        <= max_teacher_slots
-                    )
-
     student_gap_vars = []
     for stu in students:
         sname = stu["name"]
@@ -708,15 +698,59 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                 model.Add(g + cur <= 1)
                 model.Add(g >= before + after + (1 - cur) - 2)
                 student_gap_vars.append((g, sname))
-            if max_student_slots > 0:
-                win = max_student_slots + 1
-                for start in range(len(slots) - win + 1):
-                    model.Add(
-                        sum(
-                            student_slot[(sname, dname, slots[k])] for k in range(start, start + win)
-                        )
-                        <= max_student_slots
-                    )
+
+    teacher_streak_exprs = {t: [] for t in teacher_names}
+    if teacher_streak_list:
+        t_inc = []
+        prev = 0
+        for val in teacher_streak_list:
+            t_inc.append(max(0, int(val) - prev))
+            prev = int(val)
+        max_len = len(teacher_streak_list)
+        for t in teacher_names:
+            for day in days:
+                dname = day["name"]
+                slots = day["slots"]
+                for idx, s in enumerate(slots):
+                    for k in range(1, max_len + 1):
+                        if idx < k - 1:
+                            continue
+                        parts = [teacher_slot[(t, dname, slots[idx - j])] for j in range(k)]
+                        st = model.NewBoolVar(f"tstreak_{t}_{dname}_{s}_{k}")
+                        for p in parts:
+                            model.Add(st <= p)
+                        model.Add(st >= sum(parts) - k + 1)
+                        if t_inc[k - 1] > 0:
+                            teacher_streak_exprs[t].append(
+                                st * t_inc[k - 1] * teacher_importance[t] * teacher_as_students
+                            )
+    student_streak_exprs = {s: [] for s in student_importance}
+    if student_streak_list:
+        s_inc = []
+        prev = 0
+        for val in student_streak_list:
+            s_inc.append(max(0, int(val) - prev))
+            prev = int(val)
+        max_len = len(student_streak_list)
+        for sname in student_importance:
+            for day in days:
+                dname = day["name"]
+                slots = day["slots"]
+                for idx, s in enumerate(slots):
+                    for k in range(1, max_len + 1):
+                        if idx < k - 1:
+                            continue
+                        parts = [student_slot[(sname, dname, slots[idx - j])] for j in range(k)]
+                        st = model.NewBoolVar(f"sstreak_{sname}_{dname}_{s}_{k}")
+                        for p in parts:
+                            model.Add(st <= p)
+                        model.Add(st >= sum(parts) - k + 1)
+                        if s_inc[k - 1] > 0:
+                            student_streak_exprs[sname].append(
+                                st * s_inc[k - 1] * student_importance[sname] * student_size[sname]
+                            )
+    teacher_streak_exprs = {k: sum(v) if v else 0 for k, v in teacher_streak_exprs.items()}
+    student_streak_exprs = {k: sum(v) if v else 0 for k, v in student_streak_exprs.items()}
 
     # penalties for consecutive days of the same subject
     consecutive_vars = []
@@ -804,8 +838,10 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
             sum(teacher_gap_exprs.values())
             + sum(teacher_unopt_exprs.values())
             + sum(teacher_consec_exprs.values())
+            + sum(teacher_streak_exprs.values())
             + sum(student_gap_exprs.values())
             + sum(student_unopt_exprs.values())
+            + sum(student_streak_exprs.values())
         )
         model.Minimize(total_expr)
     else:
@@ -822,6 +858,14 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
             * consecutive_pen_val
             * teacher_as_students
             * max(teacher_importance.values() or [0])
+            + len(teacher_slot)
+            * (max(teacher_streak_list or [0]))
+            * teacher_as_students
+            * max(teacher_importance.values() or [0])
+            + len(student_slot)
+            * (max(student_streak_list or [0]))
+            * max(student_importance.values() or [0])
+            * max(student_size.values() or [1])
         )
         max_pen = model.NewIntVar(0, int(approx_bound + 1), "maxPenalty")
         for t in teacher_importance:
@@ -829,10 +873,16 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                 teacher_gap_exprs[t]
                 + teacher_unopt_exprs[t]
                 + teacher_consec_exprs[t]
+                + teacher_streak_exprs[t]
                 <= max_pen
             )
         for s in student_importance:
-            model.Add(student_gap_exprs[s] + student_unopt_exprs[s] <= max_pen)
+            model.Add(
+                student_gap_exprs[s]
+                + student_unopt_exprs[s]
+                + student_streak_exprs[s]
+                <= max_pen
+            )
         model.Minimize(max_pen)
 
     solver = cp_model.CpSolver()
@@ -996,6 +1046,8 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
     # calculate penalties per slot using individual importance
     for day in cfg["days"]:
         dname = day["name"]
+        teach_count = {t: 0 for t in teacher_names}
+        stud_count = {s: 0 for s in student_names}
         for slot in day["slots"]:
             # gap penalties for teachers
             for t in teacher_names:
@@ -1003,6 +1055,17 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
                     p = penalties_cfg.get("gapTeacher", 0) * teacher_importance[t]
                     slot_penalties[dname][slot]["gapTeacher"] += p
                     slot_penalty_details[dname][slot].append({"name": t, "type": "gapTeacher", "amount": p})
+                if teacher_state[t][dname][slot] == "class":
+                    teach_count[t] += 1
+                    val_idx = min(len(teacher_streak_list) - 1, teach_count[t] - 1) if teacher_streak_list else -1
+                    if val_idx >= 0:
+                        pen = teacher_streak_list[val_idx]
+                        if pen:
+                            amount = pen * teacher_importance[t] * teacher_as_students
+                            slot_penalties[dname][slot]["teacherLessonStreak"] += amount
+                            slot_penalty_details[dname][slot].append({"name": t, "type": "teacherLessonStreak", "amount": amount})
+                else:
+                    teach_count[t] = 0
             # gap penalties for students
             for sname in student_names:
                 if student_state[sname][dname][slot] == "gap":
@@ -1013,6 +1076,17 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
                     )
                     slot_penalties[dname][slot]["gapStudent"] += p
                     slot_penalty_details[dname][slot].append({"name": sname, "type": "gapStudent", "amount": p})
+                if student_state[sname][dname][slot] == "class":
+                    stud_count[sname] += 1
+                    val_idx = min(len(student_streak_list) - 1, stud_count[sname] - 1) if student_streak_list else -1
+                    if val_idx >= 0:
+                        pen = student_streak_list[val_idx]
+                        if pen:
+                            amount = pen * student_importance[sname] * student_size.get(sname, 1)
+                            slot_penalties[dname][slot]["studentLessonStreak"] += amount
+                            slot_penalty_details[dname][slot].append({"name": sname, "type": "studentLessonStreak", "amount": amount})
+                else:
+                    stud_count[sname] = 0
 
     # penalties for unoptimal slots, assigned at class start
     for day in cfg["days"]:

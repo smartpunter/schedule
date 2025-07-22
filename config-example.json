@@ -1,7 +1,5 @@
 {
   "settings": {
-    "maxTeacherSlots": [6, "Maximum number of consecutive lessons a teacher can teach. High value allows long stretches, low value forces more breaks."],
-    "maxStudentSlots": [6, "Maximum number of consecutive lessons a student can attend. Large number means longer school days without rest."],
     "objective": ["total", "Optimisation goal: 'total' minimises all penalties, 'fair' balances penalties between teachers and students."],
     "teacherAsStudents": [15, "How many student opinions a teacher counts for when calculating penalties"]
   },
@@ -18,7 +16,9 @@
     "gapTeacher": [30, "Penalty per empty slot in a teacher schedule. Higher values reduce teacher idle time."],
     "gapStudent": [100, "Penalty per empty slot in a student day. Raise to keep days compact."],
     "unoptimalSlot": [1, "Penalty for each slot away from the preferred time of a subject. Larger value pushes classes toward their optimal slot."],
-    "consecutiveClass": [10, "Penalty when a subject appears on consecutive days. High value spreads classes apart."]
+    "consecutiveClass": [10, "Penalty when a subject appears on consecutive days. High value spreads classes apart."],
+    "teacherLessonStreak": [[0,0,0,10,50,100,200,500], "Penalty depending on how many lessons in a row a teacher has."],
+    "studentLessonStreak": [[0,0,0,10,50,100,200,500], "Penalty depending on consecutive lessons for a student."]
   },
 
   "days": [

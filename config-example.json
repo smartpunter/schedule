@@ -30,14 +30,14 @@
   ],
 
   "cabinets": {
-    "Room #001": { "capacity": 20 },
+    "Room #001": { "capacity": 20, "printName": "Auditorium 1" },
     "Room #002": { "capacity": 20 },
     "Room #003": { "capacity": 10, "allowedSubjects": ["DP1_Chemistry_SL"] },
     "Room #004": { "capacity": 5,  "allowedSubjects": ["DP1_Chemistry_HL"] }
   },
 
   "subjects": {
-    "DP1_English_Literature_SL": { "teachers": ["Marie", "Helena", "Jane"], "primaryTeachers": ["Marie"], "requiredTeachers": 2, "optimalSlot": 4, "classes": [2, 1], "avoidConsecutive": false, "allowPermutations": false, "cabinets": ["Room #001", "Room #002"], "comment": "Literary analysis benefits from stabilized verbal processing later in the day." },
+    "DP1_English_Literature_SL": { "printName": "English Lit SL", "teachers": ["Marie", "Helena", "Jane"], "primaryTeachers": ["Marie"], "requiredTeachers": 2, "optimalSlot": 4, "classes": [2, 1], "avoidConsecutive": false, "allowPermutations": false, "cabinets": ["Room #001", "Room #002"], "comment": "Literary analysis benefits from stabilized verbal processing later in the day." },
     "DP1_English_Literature_HL": { "teachers": ["Marie", "Helena", "Jane"], "optimalSlot": 4, "classes": [2, 2, 1], "comment": "Extended essay work and close reading profit from early‑afternoon linguistic focus." },
 
     "DP1_Mathematics_SL": { "teachers": ["Alex", "Greg"], "optimalSlot": 0, "classes": [2, 1], "allowPermutations": false, "comment": "Problem‑solving is strongest first period when working‑memory and alertness are freshest." },
@@ -49,6 +49,7 @@
 
   "teachers": {
     "Marie": {
+      "printName": "Mrs. Marie",
       "importance": 50,
       "arriveEarly": true,
       "allowedSlots": { "Tuesday": [], "Thursday": [4,5,6,7], "Friday": [] },
@@ -61,7 +62,7 @@
       "forbiddenSlots": { "Friday": [5,6] }
     },
 
-    "Alex": {},
+    "Alex": { "printName": "Mr. Alex" },
     "Greg": {},
 
     "Olga": {},

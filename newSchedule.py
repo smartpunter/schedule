@@ -79,15 +79,25 @@ def load_config(path: str = "schedule-config.json") -> Dict[str, Any]:
 
     lessons_parsed = []
     for item in data.get("lessons", []):
-        if not isinstance(item, list) or len(item) < 5:
+        if not isinstance(item, list) or len(item) < 4:
             raise ValueError(
-                "Lesson entry must contain day, slot, subject, cabinet(s) and teachers"
+                "Lesson entry must contain at least day, slot, subject and cabinet(s)"
             )
-        if len(item) == 6:
-            day, slot, subject_id, cabinet, teachers, length = item
-        else:
-            day, slot, subject_id, cabinet, teachers = item
-            length = None
+
+        day, slot, subject_id, cabinet = item[:4]
+        teachers = None
+        length = None
+        if len(item) == 5:
+            if isinstance(item[4], int):
+                length = item[4]
+            else:
+                teachers = item[4]
+        elif len(item) >= 6:
+            teachers = item[4]
+            length = item[5]
+        if len(item) > 6:
+            raise ValueError("Lesson entry has too many elements")
+
         if isinstance(cabinet, str):
             cabinet = [cabinet]
         lessons_parsed.append(
@@ -97,7 +107,9 @@ def load_config(path: str = "schedule-config.json") -> Dict[str, Any]:
                 "subject": subject_id,
                 "length": int(length) if length is not None else None,
                 "cabinets": cabinet,
-                "teachers": list(teachers),
+                "teachers": list(teachers)
+                if teachers is not None
+                else None,
             }
         )
     data["lessons"] = lessons_parsed
@@ -157,7 +169,13 @@ def _prepare_fixed_classes(
         rooms = entry["cabinets"]
         if isinstance(rooms, str):
             rooms = [rooms]
-        tlist = entry["teachers"]
+        tlist = entry.get("teachers")
+        explicit_teachers = True
+        if not tlist:
+            explicit_teachers = False
+            tlist = []
+        elif isinstance(tlist, str):
+            tlist = [tlist]
 
         if day not in day_lookup:
             raise ValueError(f"Unknown day '{day}' in lesson {entry}")
@@ -224,17 +242,33 @@ def _prepare_fixed_classes(
             )
 
         required = int(subj.get("requiredTeachers", 1))
-        if len(tlist) != required:
-            raise ValueError(
-                f"Subject {sid} requires {required} teachers, got {len(tlist)}"
-            )
-
-        for t in tlist:
-            if t not in teacher_map or sid not in teacher_map[t]:
-                raise ValueError(f"Teacher {t} cannot teach subject {sid}")
-            if slot not in teacher_limits[t][day]:
+        if explicit_teachers:
+            if len(tlist) != required:
                 raise ValueError(
-                    f"Teacher {t} not available at {day} slot {slot} for subject {sid}"
+                    f"Subject {sid} requires {required} teachers, got {len(tlist)}"
+                )
+
+            for t in tlist:
+                if t not in teacher_map or sid not in teacher_map[t]:
+                    raise ValueError(f"Teacher {t} cannot teach subject {sid}")
+                if slot not in teacher_limits[t][day]:
+                    raise ValueError(
+                        f"Teacher {t} not available at {day} slot {slot} for subject {sid}"
+                    )
+            available_teachers = tlist
+        else:
+            available_teachers = [
+                t
+                for t in teacher_map
+                if sid in teacher_map[t]
+                and all(
+                    s in teacher_limits[t][day]
+                    for s in range(slot, slot + length)
+                )
+            ]
+            if len(available_teachers) < required:
+                raise ValueError(
+                    f"Subject {sid} requires {required} teachers, only {len(available_teachers)} available"
                 )
 
         for stu in students_by_subject.get(sid, []):
@@ -244,10 +278,15 @@ def _prepare_fixed_classes(
                 )
 
         primary = set(subj.get("primaryTeachers", []))
-        if primary and not primary.issubset(set(tlist)):
+        if explicit_teachers and primary and not primary.issubset(set(tlist)):
             missing = ", ".join(sorted(primary - set(tlist)))
             raise ValueError(
                 f"Lesson for subject {sid} missing primary teacher(s): {missing}"
+            )
+        if not explicit_teachers and primary and not primary.issubset(set(available_teachers)):
+            missing = ", ".join(sorted(primary - set(available_teachers)))
+            raise ValueError(
+                f"Primary teacher(s) {missing} not available for fixed lesson of {sid}"
             )
 
         fixed[(sid, idx)] = {
@@ -256,7 +295,8 @@ def _prepare_fixed_classes(
             "start": slot,
             "length": length,
             "cabinets": rooms,
-            "teachers": tlist,
+            "teachers": tlist if explicit_teachers else None,
+            "available_teachers": available_teachers,
         }
 
     return fixed
@@ -412,9 +452,16 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
             fixed = fixed_classes.get(key)
             cand_list = []
             if fixed is not None:
-                var = model.NewBoolVar(f"x_{sid}_{idx}_{fixed['day']}_{fixed['start']}")
+                var = model.NewBoolVar(
+                    f"x_{sid}_{idx}_{fixed['day']}_{fixed['start']}"
+                )
                 model.Add(var == 1)
                 diff = abs(fixed["start"] - subj.get("optimalSlot", 0))
+                teachers_for_pen = (
+                    fixed["teachers"]
+                    if fixed["teachers"] is not None
+                    else fixed["available_teachers"]
+                )
                 stud_pen_map = {
                     s: diff
                     * penalty_val
@@ -427,7 +474,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                     * penalty_val
                     * teacher_importance[t]
                     * teacher_as_students
-                    for t in fixed["teachers"]
+                    for t in teachers_for_pen
                 }
                 cand_list.append(
                     {
@@ -442,7 +489,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                         "teacher_pen": teach_pen_map,
                         "penalty": sum(stud_pen_map.values())
                         + sum(teach_pen_map.values()),
-                        "available_teachers": fixed["teachers"],
+                        "available_teachers": fixed["available_teachers"],
                     }
                 )
             else:
@@ -515,7 +562,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
             tv_list = []
             for t in allowed_teachers:
                 tv = model.NewBoolVar(f"is_{sid}_{idx}_teacher_{t}")
-                if fixed is not None:
+                if fixed is not None and fixed["teachers"] is not None:
                     if t in fixed["teachers"]:
                         model.Add(tv == 1)
                     else:

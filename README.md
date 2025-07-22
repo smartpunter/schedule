@@ -151,9 +151,10 @@ List of students with their subjects and optional settings.
 - `forbiddenSlots` – slots the student cannot attend
 
 ### lessons
-Optional fixed lessons specified as `[day, slot, subject, room, [teachers], length]` to lock
-classes to certain times. `length` is optional and must match one of the subject's defined
-class lengths when provided.
+Optional fixed lessons specified as `[day, slot, subject, room, teachers?, length?]` to lock
+classes to certain times. The `teachers` element may be omitted, `null` or an empty array
+to let the solver pick the best available teachers. `length` is optional and must match one
+of the subject's defined class lengths when provided.
 
 ### model (optional)
 - `maxTime` – solving time limit in seconds (default three hours). A larger value can improve results but takes longer

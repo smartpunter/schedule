@@ -1279,9 +1279,10 @@ body { font-family: Arial, sans-serif; }
 .subject-count{flex:0 0 20%;text-align:center;}
 .subject-extra{flex:0 0 20%;text-align:center;}
 /* parameter blocks */
-.param-table{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
-.param-block{flex:0 0 calc(16.66% - 6px);border:1px solid #999;padding:4px;text-align:center;}
+.param-table{--gap:8px;display:flex;flex-wrap:wrap;gap:var(--gap);justify-content:center;margin-top:10px;}
+.param-block{flex:0 0 calc((100% - (5*var(--gap)))/6);border:1px solid #999;padding:4px;text-align:center;}
 .param-block div{margin:2px 0;}
+.param-name{background:#f8f8f8;}
 </style>
 </head>
 <body>
@@ -1331,7 +1332,13 @@ function teacherSpan(name,subj){
 }
 function makeParamTable(list){
   let html='<div class="param-table">';
-  list.forEach(([n,v])=>{html+='<div class="param-block"><div>'+n+'</div><div>'+v+'</div></div>';});
+  list.forEach(item=>{
+    const name = Array.isArray(item) ? item[0] : item.name;
+    const val = Array.isArray(item) ? item[1] : item.value;
+    const bold = Array.isArray(item) ? item[2] : item.bold;
+    const valueHtml = bold ? '<strong>'+val+'</strong>' : val;
+    html += '<div class="param-block"><div class="param-name">'+name+'</div><div>'+valueHtml+'</div></div>';
+  });
   html+='</div>';return html;
 }
 function countStudents(list){return(list||[]).reduce((a,n)=>a+(studentSize[n]||1),0);}
@@ -1709,8 +1716,11 @@ function showTeacher(idx,fromModal=false){
  const name=info.name||'';
  const defImp=(configData.defaults.teacherImportance||[1])[0];
  const imp=info.importance!==undefined?info.importance:defImp;
+ const boldImp=imp!==defImp;
  const stats=computeTeacherStats(name);
  const full=computeTeacherInfo(name);
+ const defArr=(configData.defaults.teacherArriveEarly||[false])[0];
+ const boldArr=full.arrive!==defArr;
  let html='<h2>Teacher: '+name+'</h2>'+makeGrid(cls=>cls.teachers.includes(name));
  html+='<h3>Subjects</h3><table class="info-table"><tr><th>Subject</th><th>Classes</th><th>Avg size</th></tr>';
  Object.keys(full.subjects).forEach(sid=>{
@@ -1719,15 +1729,15 @@ function showTeacher(idx,fromModal=false){
    html+='<tr><td><span class="clickable subject" data-id="'+sid+'">'+sname+'</span></td><td class="num">'+s.count+'</td><td class="num">'+s.avg+'</td></tr>';});
  html+='</table>';
  const params=[
-  ['Priority',imp],
-  ['Arrive early',full.arrive?'yes':'no'],
-  ['Gap hours',stats.gap],
-  ['At school',stats.time],
-  ['Total classes',stats.totalClasses],
-  ['Average size',stats.avgSize],
-  ['Penalty',full.penalty.toFixed(1)]
+ ['Priority',imp,boldImp],
+ ['Arrive early',full.arrive?'yes':'no',boldArr],
+ ['Gap hours',stats.gap],
+ ['At school',stats.time],
+ ['Total classes',stats.totalClasses],
+ ['Average size',stats.avgSize],
+ ['Penalty',full.penalty.toFixed(1)]
  ];
- html+=makeParamTable(params);
+ html+='<h3>Configuration</h3>'+makeParamTable(params);
  openModal(html,!fromModal);
 }
 
@@ -1736,29 +1746,34 @@ function showStudent(idx,fromModal=false){
  const name=info.name||'';
  const defImp=(configData.defaults.studentImportance||[0])[0];
  const imp=info.importance!==undefined?info.importance:defImp;
+ const boldImp=imp!==defImp;
+ const group=studentSize[name]||1;
+ const boldGroup=group!==1;
  const stats=computeStudentStats(name);
  const full=computeStudentInfo(name);
+ const defArr=(configData.defaults.studentArriveEarly||[true])[0];
+ const boldArr=full.arrive!==defArr;
  let html='<h2>Student: '+name+'</h2>'+makeGrid(cls=>cls.students.includes(name));
  html+='<h3>Subjects</h3><table class="info-table"><tr><th>Subject</th><th>Classes</th><th>Penalty</th></tr>';
  Object.keys(full.subjects).forEach(sid=>{const s=full.subjects[sid];const sn=(configData.subjects[sid]||{}).name||sid;html+='<tr><td><span class="clickable subject" data-id="'+sid+'">'+sn+'</span></td><td class="num">'+s.count+'</td><td class="num">'+(s.penalty||0).toFixed(1)+'</td></tr>';});
  html+='</table>';
  const params=[
-  ['Group size',studentSize[name]||1],
-  ['Priority',imp],
-  ['Arrive early',full.arrive?'yes':'no'],
-  ['Gap hours',stats.gap],
-  ['At school',stats.time],
-  ['Penalty',full.penalty.toFixed(1)]
+ ['Group size',group,boldGroup],
+ ['Priority',imp,boldImp],
+ ['Arrive early',full.arrive?'yes':'no',boldArr],
+ ['Gap hours',stats.gap],
+ ['At school',stats.time],
+ ['Penalty',full.penalty.toFixed(1)]
  ];
- html+=makeParamTable(params);
+ html+='<h3>Configuration</h3>'+makeParamTable(params);
  openModal(html,!fromModal);
 }
 
 function showCabinet(name,fromModal=false){
  const info=configData.cabinets[name]||{};
  let html='<h2>Room: '+name+'</h2>'+makeGrid(cls=>cls.cabinet===name);
- const params=[['Capacity',info.capacity||'-']];
- html+=makeParamTable(params);
+ const params=[[ 'Capacity',info.capacity||'-' ]];
+ html+='<h3>Configuration</h3>'+makeParamTable(params);
  openModal(html,!fromModal);
 }
 
@@ -1773,16 +1788,24 @@ html+='<h3>Teachers</h3><table class="info-table"><tr><th>Name</th></tr>';
  html+='</table>';
  const defPerm=(configData.defaults.permutations||[true])[0];
  const defAvoid=(configData.defaults.avoidConsecutive||[true])[0];
+ const opt=subj.optimalSlot!==undefined?subj.optimalSlot:defOpt;
+ const boldOpt=opt!==defOpt;
+ const perm=subj.allowPermutations!==undefined?subj.allowPermutations:defPerm;
+ const boldPerm=perm!==defPerm;
+ const avoid=subj.avoidConsecutive!==undefined?subj.avoidConsecutive:defAvoid;
+ const boldAvoid=avoid!==defAvoid;
+ const req=subj.requiredTeachers!==undefined?subj.requiredTeachers:1;
+ const boldReq=req!==1;
  const params=[
   ['Classes',(subj.classes||[]).join(', ')||'-'],
-  ['Optimal lesson',(subj.optimalSlot!==undefined?subj.optimalSlot:defOpt)+1],
-  ['Allow permutations',(subj.allowPermutations!==undefined?subj.allowPermutations:defPerm)?'yes':'no'],
-  ['Avoid consecutive',(subj.avoidConsecutive!==undefined?subj.avoidConsecutive:defAvoid)?'yes':'no'],
-  ['Required teachers',subj.requiredTeachers!==undefined?subj.requiredTeachers:1],
+  ['Optimal lesson',opt+1,boldOpt],
+  ['Allow permutations',perm?'yes':'no',boldPerm],
+  ['Avoid consecutive',avoid?'yes':'no',boldAvoid],
+  ['Required teachers',req,boldReq],
   ['Cabinets',(subj.cabinets||[]).join(', ')||'-'],
   ['Primary teachers',(subj.primaryTeachers||[]).join(', ')||'-']
  ];
- html+=makeParamTable(params);
+ html+='<h3>Configuration</h3>'+makeParamTable(params);
  openModal(html,!fromModal);
 }
 

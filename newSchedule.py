@@ -1409,6 +1409,10 @@ def render_schedule(schedule: Dict[str, Any], cfg: Dict[str, Any]) -> None:
         sid: info.get("printName", info.get("name", sid))
         for sid, info in cfg.get("subjects", {}).items()
     }
+    teacher_names = {
+        t["name"]: t.get("printName", t.get("name", t["name"]))
+        for t in cfg.get("teachers", [])
+    }
     student_size = {s["name"]: int(s.get("group", 1)) for s in cfg.get("students", [])}
 
     print()

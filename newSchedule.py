@@ -1278,6 +1278,10 @@ body { font-family: Arial, sans-serif; }
 .subject-name{flex:0 0 60%;text-align:left;}
 .subject-count{flex:0 0 20%;text-align:center;}
 .subject-extra{flex:0 0 20%;text-align:center;}
+/* parameter blocks */
+.param-table{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
+.param-block{flex:0 0 calc(16.66% - 6px);border:1px solid #999;padding:4px;text-align:center;}
+.param-block div{margin:2px 0;}
 </style>
 </head>
 <body>
@@ -1324,6 +1328,11 @@ function teacherSpan(name,subj){
   const prim=(configData.subjects[subj]||{}).primaryTeachers||[];
   const inner=prim.includes(name)?'<strong>'+name+'</strong>':name;
   return '<span class="clickable teacher" data-id="'+id+'">'+inner+'</span>';
+}
+function makeParamTable(list){
+  let html='<div class="param-table">';
+  list.forEach(([n,v])=>{html+='<div class="param-block"><div>'+n+'</div><div>'+v+'</div></div>';});
+  html+='</div>';return html;
 }
 function countStudents(list){return(list||[]).reduce((a,n)=>a+(studentSize[n]||1),0);}
 let historyStack=[];
@@ -1702,22 +1711,23 @@ function showTeacher(idx,fromModal=false){
  const imp=info.importance!==undefined?info.importance:defImp;
  const stats=computeTeacherStats(name);
  const full=computeTeacherInfo(name);
- let html='<h2>Teacher: '+name+'</h2>';
- html+='<table class="info-table">'+
-  '<tr><th>Priority</th><td class="num">'+imp+'</td></tr>'+
-  '<tr><th>Arrive early</th><td>'+(full.arrive?'yes':'no')+'</td></tr>'+
-  '<tr><th>Gap hours</th><td class="num">'+stats.gap+'</td></tr>'+
-  '<tr><th>At school</th><td class="num">'+stats.time+'</td></tr>'+
-  '<tr><th>Total classes</th><td class="num">'+stats.totalClasses+'</td></tr>'+
-  '<tr><th>Average size</th><td class="num">'+stats.avgSize+'</td></tr>'+
-  '<tr><th>Penalty</th><td class="num">'+full.penalty.toFixed(1)+'</td></tr>'+
-  '</table>';
+ let html='<h2>Teacher: '+name+'</h2>'+makeGrid(cls=>cls.teachers.includes(name));
  html+='<h3>Subjects</h3><table class="info-table"><tr><th>Subject</th><th>Classes</th><th>Avg size</th></tr>';
  Object.keys(full.subjects).forEach(sid=>{
    const s=full.subjects[sid];
    const sname=(configData.subjects[sid]||{}).name||sid;
    html+='<tr><td><span class="clickable subject" data-id="'+sid+'">'+sname+'</span></td><td class="num">'+s.count+'</td><td class="num">'+s.avg+'</td></tr>';});
- html+='</table><h3>Schedule</h3>'+makeGrid(cls=>cls.teachers.includes(name));
+ html+='</table>';
+ const params=[
+  ['Priority',imp],
+  ['Arrive early',full.arrive?'yes':'no'],
+  ['Gap hours',stats.gap],
+  ['At school',stats.time],
+  ['Total classes',stats.totalClasses],
+  ['Average size',stats.avgSize],
+  ['Penalty',full.penalty.toFixed(1)]
+ ];
+ html+=makeParamTable(params);
  openModal(html,!fromModal);
 }
 
@@ -1728,54 +1738,67 @@ function showStudent(idx,fromModal=false){
  const imp=info.importance!==undefined?info.importance:defImp;
  const stats=computeStudentStats(name);
  const full=computeStudentInfo(name);
- let html='<h2>Student: '+name+'</h2>';
- html+='<table class="info-table">'+
-  '<tr><th>Group size</th><td class="num">'+(studentSize[name]||1)+'</td></tr>'+
-  '<tr><th>Priority</th><td class="num">'+imp+'</td></tr>'+
-  '<tr><th>Arrive early</th><td>'+(full.arrive?'yes':'no')+'</td></tr>'+
-  '<tr><th>Gap hours</th><td class="num">'+stats.gap+'</td></tr>'+
-  '<tr><th>At school</th><td class="num">'+stats.time+'</td></tr>'+
-  '<tr><th>Penalty</th><td class="num">'+full.penalty.toFixed(1)+'</td></tr>'+
-  '</table>';
+ let html='<h2>Student: '+name+'</h2>'+makeGrid(cls=>cls.students.includes(name));
  html+='<h3>Subjects</h3><table class="info-table"><tr><th>Subject</th><th>Classes</th><th>Penalty</th></tr>';
  Object.keys(full.subjects).forEach(sid=>{const s=full.subjects[sid];const sn=(configData.subjects[sid]||{}).name||sid;html+='<tr><td><span class="clickable subject" data-id="'+sid+'">'+sn+'</span></td><td class="num">'+s.count+'</td><td class="num">'+(s.penalty||0).toFixed(1)+'</td></tr>';});
- html+='</table><h3>Schedule</h3>'+makeGrid(cls=>cls.students.includes(name));
+ html+='</table>';
+ const params=[
+  ['Group size',studentSize[name]||1],
+  ['Priority',imp],
+  ['Arrive early',full.arrive?'yes':'no'],
+  ['Gap hours',stats.gap],
+  ['At school',stats.time],
+  ['Penalty',full.penalty.toFixed(1)]
+ ];
+ html+=makeParamTable(params);
  openModal(html,!fromModal);
 }
 
 function showCabinet(name,fromModal=false){
  const info=configData.cabinets[name]||{};
- let html='<h2>Room: '+name+'</h2>';
- html+='<table class="info-table"><tr><th>Capacity</th><td class="num">'+(info.capacity||'-')+'</td></tr></table>';
- html+='<h3>Schedule</h3>'+makeGrid(cls=>cls.cabinet===name);
+ let html='<h2>Room: '+name+'</h2>'+makeGrid(cls=>cls.cabinet===name);
+ const params=[['Capacity',info.capacity||'-']];
+ html+=makeParamTable(params);
  openModal(html,!fromModal);
 }
 
 function showSubject(id,fromModal=false){
  const subj=configData.subjects[id]||{};
  const defOpt=(configData.defaults.optimalSlot||[0])[0];
- let html='<h2>Subject: '+(subj.name||id)+'</h2>';
- html+='<table class="info-table">'+
-  '<tr><th>Classes</th><td>'+((subj.classes||[]).join(', ')||'-')+'</td></tr>'+
-  '<tr><th>Optimal lesson</th><td class="num">'+((subj.optimalSlot!==undefined?subj.optimalSlot:defOpt)+1)+'</td></tr>'+
-  '</table>';
+ let html='<h2>Subject: '+(subj.name||id)+'</h2>'+makeGrid(cls=>cls.subject===id);
 html+='<h3>Teachers</h3><table class="info-table"><tr><th>Name</th></tr>';
 (configData.teachers||[]).forEach((t,i)=>{if((t.subjects||[]).includes(id)){const bold=(subj.primaryTeachers||[]).includes(t.name);const nm=bold?'<strong>'+t.name+'</strong>':t.name;html+='<tr><td><span class="clickable teacher" data-id="'+i+'">'+nm+'</span></td></tr>';}});
  html+='</table><h3>Students</h3><table class="info-table"><tr><th>Name</th><th>Group</th></tr>';
  (configData.students||[]).forEach((s,i)=>{if((s.subjects||[]).includes(id)){html+='<tr><td><span class="clickable student" data-id="'+i+'">'+s.name+'</span></td><td class="num">'+(studentSize[s.name]||1)+'</td></tr>';}});
-html+='</table><h3>Schedule</h3>'+makeGrid(cls=>cls.subject===id);
+ html+='</table>';
+ const defPerm=(configData.defaults.permutations||[true])[0];
+ const defAvoid=(configData.defaults.avoidConsecutive||[true])[0];
+ const params=[
+  ['Classes',(subj.classes||[]).join(', ')||'-'],
+  ['Optimal lesson',(subj.optimalSlot!==undefined?subj.optimalSlot:defOpt)+1],
+  ['Allow permutations',(subj.allowPermutations!==undefined?subj.allowPermutations:defPerm)?'yes':'no'],
+  ['Avoid consecutive',(subj.avoidConsecutive!==undefined?subj.avoidConsecutive:defAvoid)?'yes':'no'],
+  ['Required teachers',subj.requiredTeachers!==undefined?subj.requiredTeachers:1],
+  ['Cabinets',(subj.cabinets||[]).join(', ')||'-'],
+  ['Primary teachers',(subj.primaryTeachers||[]).join(', ')||'-']
+ ];
+ html+=makeParamTable(params);
  openModal(html,!fromModal);
 }
 
 document.addEventListener('click',e=>{
  const fromModal=modal.contains(e.target);
  const slotElem=e.target.closest('.slot-info');
- if(slotElem){showSlot(slotElem.dataset.day,parseInt(slotElem.dataset.slot),fromModal);return;}
- const t=e.target;
- if(t.classList.contains('subject')){showSubject(t.dataset.id,fromModal);}
- else if(t.classList.contains('teacher')){showTeacher(parseInt(t.dataset.id),fromModal);}
- else if(t.classList.contains('student')){showStudent(parseInt(t.dataset.id),fromModal);}
- else if(t.classList.contains('cabinet')){showCabinet(t.dataset.id,fromModal);}
+ if(slotElem){
+   showSlot(slotElem.dataset.day,parseInt(slotElem.dataset.slot),fromModal);
+   return;
+ }
+ const target=e.target.closest('.subject,.teacher,.student,.cabinet');
+ if(!target)return;
+ if(target.classList.contains('subject')){showSubject(target.dataset.id,fromModal);}
+ else if(target.classList.contains('teacher')){showTeacher(parseInt(target.dataset.id),fromModal);}
+ else if(target.classList.contains('student')){showStudent(parseInt(target.dataset.id),fromModal);}
+ else if(target.classList.contains('cabinet')){showCabinet(target.dataset.id,fromModal);}
 });
 
 buildTable();

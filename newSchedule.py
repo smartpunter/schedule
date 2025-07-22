@@ -1327,7 +1327,7 @@ body { font-family: Arial, sans-serif; }
 .subject-extra{flex:0 0 20%;text-align:center;}
 /* parameter blocks */
 .param-table{--gap:8px;display:flex;flex-wrap:wrap;gap:var(--gap);justify-content:center;margin-top:10px;}
-.param-block{flex:0 0 calc((100% - (5*var(--gap)))/6);border:1px solid #999;text-align:center;}
+.param-block{flex:0 0 calc((100% - (6*var(--gap)))/6);border:1px solid #999;text-align:center;}
 .param-block div{margin:0 0 5px 0; padding: 4px 0;}
 .param-name{background:#f0f0f0;}
 </style>

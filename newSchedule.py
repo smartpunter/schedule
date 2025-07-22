@@ -762,7 +762,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
         for cand_list in candidates.values():
             for c in cand_list:
                 pres = c.get("teacher_pres", {}).get(t)
-                if pres:
+                if pres is not None:
                     val = c["teacher_pen"].get(t, 0)
                     expr.append(val * pres)
         teacher_unopt_exprs[t] = sum(expr) if expr else 0
@@ -771,9 +771,13 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
     for t in teacher_importance:
         expr = []
         for (sid, j), var in consecutive_map.items():
+            tv = teacher_choice.get((sid, j, t))
+            if tv is None:
+                continue
+            both = model.NewBoolVar(f"cons_t_{sid}_{j}_{t}")
+            model.AddMultiplicationEquality(both, [var, tv])
             expr.append(
-                var
-                * teacher_choice[(sid, j, t)]
+                both
                 * consecutive_pen_val
                 * teacher_importance[t]
                 * teacher_as_students
@@ -826,7 +830,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
         max_time = max_time[0]
     workers = model_params.get("workers", DEFAULT_WORKERS)
     if isinstance(workers, list):
-        workers = workers[0]
+        workers = workers[0] or DEFAULT_WORKERS
     show_progress = model_params.get("showProgress", DEFAULT_SHOW_PROGRESS)
     if isinstance(show_progress, list):
         show_progress = show_progress[0]

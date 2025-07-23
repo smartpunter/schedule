@@ -420,11 +420,6 @@ def build_model(
     candidates: Dict[tuple, List[Dict[str, Any]]] = {}
     # chosen day index for each class
     class_day_idx: Dict[tuple, cp_model.IntVar] = {}
-    # teacher and cabinet selections for every class
-    teacher_choice: Dict[tuple, cp_model.BoolVar] = {}
-    cabinet_choice: Dict[tuple, cp_model.BoolVar] = {}
-    allowed_teacher_map: Dict[tuple, List[str]] = {}
-    allowed_cabinet_map: Dict[tuple, List[str]] = {}
     avoid_map = {
         sid: subj.get("avoidConsecutive", default_avoid_consecutive)
         for sid, subj in subjects.items()
@@ -566,44 +561,49 @@ def build_model(
             class_day_idx[key] = day_var
             required = int(subj.get("requiredTeachers", 1))
             primary = set(subj.get("primaryTeachers", []))
-            tv_list = []
-            for t in allowed_teachers:
-                tv = model.NewBoolVar(f"is_{sid}_{idx}_teacher_{t}")
-                if fixed is not None and fixed["teachers"] is not None:
-                    if t in fixed["teachers"]:
-                        model.Add(tv == 1)
-                    else:
-                        model.Add(tv == 0)
-                elif t in primary:
-                    model.Add(tv == 1)
-                teacher_choice[(sid, idx, t)] = tv
-                tv_list.append(tv)
-            if tv_list:
-                model.Add(sum(tv_list) == required)
-            allowed_teacher_map[key] = allowed_teachers
-            cv_list = []
-            for c in allowed_cabinets:
-                cv = model.NewBoolVar(f"is_{sid}_{idx}_cab_{c}")
-                if fixed is not None:
-                    if c in fixed["cabinets"]:
-                        model.Add(cv == 1)
-                    else:
-                        model.Add(cv == 0)
-                cabinet_choice[(sid, idx, c)] = cv
-                cv_list.append(cv)
-            if not cv_list or len(cv_list) < required_cabs:
-                raise RuntimeError(f"No cabinet for subject {sid} class {idx}")
-            model.Add(sum(cv_list) == required_cabs)
-            model.Add(
-                sum(
-                    cabinets[c]["capacity"] * cabinet_choice[(sid, idx, c)]
-                    for c in allowed_cabinets
-                )
-                >= class_size
-            )
-            allowed_cabinet_map[key] = allowed_cabinets
-            # create interval objects for candidates
+
             for cand in cand_list:
+                if any(pt not in cand["available_teachers"] for pt in primary):
+                    model.Add(cand["var"] == 0)
+
+                teach_vars = {}
+                for t in cand["available_teachers"]:
+                    tv = model.NewBoolVar(
+                        f"teach_{sid}_{idx}_{t}_{cand['day']}_{cand['start']}"
+                    )
+                    model.Add(tv <= cand["var"])
+                    if fixed is not None and fixed.get("teachers") is not None:
+                        if t in fixed["teachers"]:
+                            model.Add(tv == cand["var"])
+                        else:
+                            model.Add(tv == 0)
+                    elif t in primary:
+                        model.Add(tv == cand["var"])
+                    teach_vars[t] = tv
+                if teach_vars:
+                    model.Add(sum(teach_vars.values()) == required * cand["var"])
+                cand["teacher_pres"] = teach_vars
+
+                cab_vars = {}
+                for c in allowed_cabinets:
+                    cv = model.NewBoolVar(
+                        f"cab_{sid}_{idx}_{c}_{cand['day']}_{cand['start']}"
+                    )
+                    model.Add(cv <= cand["var"])
+                    if fixed is not None:
+                        if c in fixed["cabinets"]:
+                            model.Add(cv == cand["var"])
+                        else:
+                            model.Add(cv == 0)
+                    cab_vars[c] = cv
+                if cab_vars:
+                    model.Add(sum(cab_vars.values()) == required_cabs * cand["var"])
+                    model.Add(
+                        sum(cabinets[c]["capacity"] * cab_vars[c] for c in allowed_cabinets)
+                        >= class_size * cand["var"]
+                    )
+                cand["cabinet_pres"] = cab_vars
+
                 cand["interval"] = model.NewOptionalIntervalVar(
                     cand["start"],
                     cand["length"],
@@ -651,16 +651,7 @@ def build_model(
                 student_intervals[stu][cand["day"]].append(
                     (base_int, start, end, cand["var"])
                 )
-            for t in allowed_teacher_map[(sid, idx)]:
-                if t not in cand.get("available_teachers", []):
-                    model.AddImplication(cand["var"], teacher_choice[(sid, idx, t)].Not())
-                    continue
-                pres = model.NewBoolVar(
-                    f"teach_{sid}_{idx}_{t}_{cand['day']}_{cand['start']}"
-                )
-                model.Add(pres <= cand["var"])
-                model.Add(pres <= teacher_choice[(sid, idx, t)])
-                model.Add(pres >= cand["var"] + teacher_choice[(sid, idx, t)] - 1)
+            for t, pres in cand.get("teacher_pres", {}).items():
                 interval = model.NewOptionalIntervalVar(
                     start,
                     cand["length"],
@@ -669,25 +660,15 @@ def build_model(
                     f"tint_{sid}_{idx}_{t}_{cand['day']}_{cand['start']}"
                 )
                 teacher_intervals[t][cand["day"]].append((interval, start, end, pres))
-                cand.setdefault("teacher_pres", {})[t] = pres
-            for cab in cabinets:
-                if (sid, idx, cab) not in cabinet_choice:
-                    continue
-                cv = cabinet_choice[(sid, idx, cab)]
-                pres = model.NewBoolVar(
-                    f"cab_{sid}_{idx}_{cab}_{cand['day']}_{cand['start']}"
-                )
-                model.Add(pres <= cand["var"])
-                model.Add(pres <= cv)
-                model.Add(pres >= cand["var"] + cv - 1)
+            for cab, cv in cand.get("cabinet_pres", {}).items():
                 interval = model.NewOptionalIntervalVar(
                     cand["start"],
                     cand["length"],
                     cand["start"] + cand["length"],
-                    pres,
+                    cv,
                     f"cint_{sid}_{idx}_{cab}_{cand['day']}_{cand['start']}"
                 )
-                cabinet_intervals[cab][cand["day"]].append((interval, start, end, pres))
+                cabinet_intervals[cab][cand["day"]].append((interval, start, end, cv))
 
     for t, day_map in teacher_intervals.items():
         for ivs in day_map.values():
@@ -923,17 +904,20 @@ def build_model(
     for t in teacher_importance:
         expr = []
         for (sid, j), var in consecutive_map.items():
-            tv = teacher_choice.get((sid, j, t))
-            if tv is None:
-                continue
-            both = model.NewBoolVar(f"cons_t_{sid}_{j}_{t}")
-            model.AddMultiplicationEquality(both, [var, tv])
-            expr.append(
-                both
-                * consecutive_pen_val
-                * teacher_importance[t]
-                * teacher_as_students
-            )
+            for cand in candidates[(sid, j)]:
+                pres = cand.get("teacher_pres", {}).get(t)
+                if pres is None:
+                    continue
+                both = model.NewBoolVar(
+                    f"cons_t_{sid}_{j}_{t}_{cand['day']}_{cand['start']}"
+                )
+                model.AddMultiplicationEquality(both, [var, pres])
+                expr.append(
+                    both
+                    * consecutive_pen_val
+                    * teacher_importance[t]
+                    * teacher_as_students
+                )
         teacher_consec_exprs[t] = sum(expr) if expr else 0
 
     consecutive_expr = sum(teacher_consec_exprs.values()) if consecutive_vars else 0
@@ -1019,18 +1003,18 @@ def build_model(
 
     schedule = _init_schedule(days)
     for (sid, idx), cand_list in candidates.items():
-        selected_cabs = [
-            c
-            for c in allowed_cabinet_map[(sid, idx)]
-            if solver.Value(cabinet_choice[(sid, idx, c)])
-        ]
-        assigned_teachers = [
-            t
-            for t in allowed_teacher_map[(sid, idx)]
-            if solver.Value(teacher_choice[(sid, idx, t)])
-        ]
         for c in cand_list:
             if solver.Value(c["var"]):
+                selected_cabs = [
+                    cab
+                    for cab, cv in c.get("cabinet_pres", {}).items()
+                    if solver.Value(cv)
+                ]
+                assigned_teachers = [
+                    t
+                    for t, tv in c.get("teacher_pres", {}).items()
+                    if solver.Value(tv)
+                ]
                 for s in range(c["start"], c["start"] + c["length"]):
                     schedule[c["day"]][s].append(
                         {

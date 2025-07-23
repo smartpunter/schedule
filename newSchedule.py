@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+import copy
 from collections import defaultdict
 from statistics import mean
 from typing import Dict, List, Any, Set
@@ -302,8 +303,14 @@ def _prepare_fixed_classes(
     return fixed
 
 
-def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]]]:
-    """Build schedule using CP-SAT optimisation."""
+def build_model(
+    cfg: Dict[str, Any], feasibility_only: bool = False
+) -> Dict[str, Dict[int, List[Dict[str, Any]]]]:
+    """Build schedule using CP-SAT optimisation.
+
+    When ``feasibility_only`` is True the penalties are ignored and the
+    solver searches for any schedule that satisfies hard constraints.
+    """
     days = cfg["days"]
     subjects = cfg["subjects"]
     teachers = cfg.get("teachers", [])
@@ -931,7 +938,9 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
 
     consecutive_expr = sum(teacher_consec_exprs.values()) if consecutive_vars else 0
 
-    if obj_mode == "total":
+    if feasibility_only:
+        model.Minimize(0)
+    elif obj_mode == "total":
         total_expr = (
             sum(teacher_gap_exprs.values())
             + sum(teacher_unopt_exprs.values())
@@ -998,6 +1007,10 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
     solver.parameters.max_time_in_seconds = max_time
     solver.parameters.num_search_workers = workers
     solver.parameters.log_search_progress = show_progress
+    if feasibility_only:
+        solver.parameters.search_branching = (
+            cp_model.PORTFOLIO_WITH_QUICK_RESTART_SEARCH
+        )
 
     status = solver.Solve(model)
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
@@ -2216,6 +2229,18 @@ buildStudents();
         fh.write(html)
 
 
+def check_feasibility(cfg: Dict[str, Any]) -> bool:
+    """Return True if a feasible schedule exists."""
+    cfg_copy = copy.deepcopy(cfg)
+    cfg_copy.setdefault("model", {})["showProgress"] = False
+
+    try:
+        build_model(cfg_copy, feasibility_only=True)
+    except RuntimeError:
+        return False
+    return True
+
+
 def main() -> None:
     args = [a for a in sys.argv[1:] if a != "-y"]
     auto_yes = "-y" in sys.argv[1:]
@@ -2228,19 +2253,20 @@ def main() -> None:
         print(f"Config '{cfg_path}' not found.")
         return
 
+    cfg = load_config(cfg_path)
+
+    obj_mode = cfg.get("settings", {}).get("objective", ["total"])[0]
     skip_solve = False
-    if os.path.exists(out_path):
+    if obj_mode != "check" and os.path.exists(out_path):
         if auto_yes:
             skip_solve = True
         else:
-            ans = input(f"Schedule file '{out_path}' found. Skip solving and use it? [y/N] ")
+            ans = input(
+                f"Schedule file '{out_path}' found. Skip solving and use it? [y/N] "
+            )
             skip_solve = ans.strip().lower().startswith("y")
 
-    cfg = load_config(cfg_path)
-
-    student_dups = _detect_duplicates(
-        cfg.get("students", []), ["subjects"]
-    )
+    student_dups = _detect_duplicates(cfg.get("students", []), ["subjects"])
     if student_dups and not skip_solve:
         print("Duplicate entities detected:")
         for names in student_dups:
@@ -2250,6 +2276,18 @@ def main() -> None:
             if not ans.strip().lower().startswith("y"):
                 print("Exiting due to duplicates.")
                 return
+
+    if obj_mode == "check":
+        feasible = check_feasibility(cfg)
+        if feasible:
+            print(
+                "A feasible schedule exists. THIS IS NOT OPTIMAL. "
+                "Set objective to 'total' or 'fair' for optimisation."
+            )
+        else:
+            print("No feasible schedule found.")
+        return
+
     fresh = not skip_solve
     if skip_solve:
         with open(out_path, "r", encoding="utf-8") as fh:

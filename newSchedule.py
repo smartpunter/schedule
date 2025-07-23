@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+import copy
 from collections import defaultdict
 from statistics import mean
 from typing import Dict, List, Any, Set
@@ -2216,9 +2217,32 @@ buildStudents();
         fh.write(html)
 
 
+def check_feasibility(cfg: Dict[str, Any], time_limit: int = 60) -> bool:
+    """Return True if a feasible schedule exists within the time limit."""
+    cfg_copy = copy.deepcopy(cfg)
+    model_cfg = cfg_copy.setdefault("model", {})
+    model_cfg["maxTime"] = time_limit
+    model_cfg["showProgress"] = False
+
+    penalties = cfg_copy.setdefault("penalties", {})
+    penalties["gapTeacher"] = 0
+    penalties["gapStudent"] = 0
+    penalties["unoptimalSlot"] = 0
+    penalties["consecutiveClass"] = 0
+    penalties["teacherLessonStreak"] = [0]
+    penalties["studentLessonStreak"] = [0]
+
+    try:
+        build_model(cfg_copy)
+    except RuntimeError:
+        return False
+    return True
+
+
 def main() -> None:
-    args = [a for a in sys.argv[1:] if a != "-y"]
+    args = [a for a in sys.argv[1:] if a not in ("-y", "--feasibility")]
     auto_yes = "-y" in sys.argv[1:]
+    check_only = "--feasibility" in sys.argv[1:]
 
     cfg_path = args[0] if len(args) >= 1 else "schedule-config.json"
     out_path = args[1] if len(args) >= 2 else "schedule.json"
@@ -2229,11 +2253,13 @@ def main() -> None:
         return
 
     skip_solve = False
-    if os.path.exists(out_path):
+    if not check_only and os.path.exists(out_path):
         if auto_yes:
             skip_solve = True
         else:
-            ans = input(f"Schedule file '{out_path}' found. Skip solving and use it? [y/N] ")
+            ans = input(
+                f"Schedule file '{out_path}' found. Skip solving and use it? [y/N] "
+            )
             skip_solve = ans.strip().lower().startswith("y")
 
     cfg = load_config(cfg_path)
@@ -2250,6 +2276,14 @@ def main() -> None:
             if not ans.strip().lower().startswith("y"):
                 print("Exiting due to duplicates.")
                 return
+    if check_only:
+        feasible = check_feasibility(cfg)
+        if feasible:
+            print("A feasible schedule exists.")
+        else:
+            print("No feasible schedule found within the time limit.")
+        return
+
     fresh = not skip_solve
     if skip_solve:
         with open(out_path, "r", encoding="utf-8") as fh:

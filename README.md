@@ -72,6 +72,8 @@ Advanced users can provide three optional parameters: a config file, the JSON ou
 python newSchedule.py schedule-config.json schedule.json schedule.html
 ```
 
+Add `--feasibility` to only verify that a schedule is possible. The solver runs for up to 60 seconds and reports the result without generating files.
+
 While the solver runs you will see lines similar to
 
 ```

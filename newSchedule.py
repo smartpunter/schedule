@@ -1600,7 +1600,8 @@ body { font-family: Arial, sans-serif; }
 .person-pen{flex:0 0 6%;text-align:center;}
 .person-hours{flex:0 0 6%;text-align:center;}
 .person-time{flex:0 0 6%;text-align:center;}
-.person-subjects{flex:0 0 51%;text-align:left;padding:0;}
+.person-load{flex:0 0 6%;text-align:center;}
+.person-subjects{flex:0 0 45%;text-align:left;padding:0;}
 .subject-list{display:flex;flex-direction:column;}
 .subject-line{display:flex;gap:6px;border-top:1px solid #ddd;padding:2px 4px;}
 .subject-line:first-child{border-top:none;}
@@ -1943,8 +1944,10 @@ function computeTeacherInfo(name){
  const defImp=(configData.defaults.teacherImportance||[1])[0];
  const arrive=info.arriveEarly!==undefined?info.arriveEarly:defArr;
  const imp=info.importance!==undefined?info.importance:defImp;
- let hours=0,gap=0,time=0,subjects={},pen=0;
- scheduleData.days.forEach(day=>{
+ const allow=info.allowedSlots||null;
+ const forbid=info.forbiddenSlots||null;
+ let hours=0,gap=0,time=0,subjects={},pen=0,avail=0;
+  scheduleData.days.forEach(day=>{
    const slots=day.slots;
    const dayStart=slots.length?slots[0].slotIndex:0;
    const teachSlots=slots.filter(sl=>sl.classes.some(c=>(c.teachers||[]).includes(name)));
@@ -1961,9 +1964,29 @@ function computeTeacherInfo(name){
      });
    }
   slots.forEach(sl=>{(sl.penaltyDetails||[]).forEach(p=>{if(p.name===name)pen+=p.amount;});});
- });
- for(const k in subjects){subjects[k].avg=(subjects[k].size/subjects[k].count).toFixed(1);}
- return{arrive,imp,penalty:pen/imp,hours:hours,time:time,subjects};
+  const allSlots=slots.map(s=>s.slotIndex);
+  let allowed=new Set(allSlots);
+  if(allow!==null){
+    if(Object.prototype.hasOwnProperty.call(allow,day.name)){
+      const arr=allow[day.name];
+      allowed=new Set(arr.length?arr:allSlots);
+    }else{
+      allowed=new Set();
+    }
+  }
+  if(forbid!==null && Object.prototype.hasOwnProperty.call(forbid,day.name)){
+    const fb=forbid[day.name];
+    if(!fb.length){
+      allowed=new Set();
+    }else{
+      fb.forEach(x=>allowed.delete(x));
+    }
+  }
+  avail+=allowed.size;
+  });
+  for(const k in subjects){subjects[k].avg=(subjects[k].size/subjects[k].count).toFixed(1);}
+ const load=avail?Math.round(hours*100/avail):0;
+ return{arrive,imp,penalty:pen/imp,hours:hours,time:time,load:load,subjects};
 }
 
 function computeStudentInfo(name){
@@ -2010,7 +2033,7 @@ function buildTeachers(){
  cont.innerHTML='';
  const header=document.createElement('div');
  header.className='overview-header';
-  header.innerHTML='<span class="person-name">Teacher</span><span class="person-info">Priority<br>Arrive</span><span class="person-pen">Penalty</span><span class="person-hours">Hours</span><span class="person-time">At school</span><span class="person-subjects">Subject<br>Cls | Avg</span>';
+  header.innerHTML='<span class="person-name">Teacher</span><span class="person-info">Priority<br>Arrive</span><span class="person-pen">Penalty</span><span class="person-hours">Hours</span><span class="person-time">At school</span><span class="person-load">Load %</span><span class="person-subjects">Subject<br>Cls | Avg</span>';
  cont.appendChild(header);
  const infos=(configData.teachers||[]).map(t=>{return{info:t,stat:computeTeacherInfo(t.name)}});
  infos.sort((a,b)=>b.stat.penalty-a.stat.penalty);
@@ -2027,12 +2050,13 @@ function buildTeachers(){
        '<span class="subject-count">'+s.count+'</span>'+
        '<span class="subject-extra">'+s.avg+'</span></div>';
    });
-   row.innerHTML='<span class="person-name clickable teacher" data-id="'+teacherIndex[item.info.name]+'">'+(teacherDisplay[item.info.name]||item.info.name)+'</span>'+
-     '<span class="person-info">'+pr+'<br>'+arr+'</span>'+
-     '<span class="person-pen">'+item.stat.penalty.toFixed(1)+'</span>'+
-     '<span class="person-hours">'+item.stat.hours+'</span>'+
-     '<span class="person-time">'+item.stat.time+'</span>'+
-     '<span class="person-subjects"><div class="subject-list">'+subjHtml+'</div></span>';
+  row.innerHTML='<span class="person-name clickable teacher" data-id="'+teacherIndex[item.info.name]+'">'+(teacherDisplay[item.info.name]||item.info.name)+'</span>'+
+    '<span class="person-info">'+pr+'<br>'+arr+'</span>'+
+    '<span class="person-pen">'+item.stat.penalty.toFixed(1)+'</span>'+
+    '<span class="person-hours">'+item.stat.hours+'</span>'+
+    '<span class="person-time">'+item.stat.time+'</span>'+
+    '<span class="person-load">'+item.stat.load+'</span>'+
+    '<span class="person-subjects"><div class="subject-list">'+subjHtml+'</div></span>';
    cont.appendChild(row);
   });
 }
@@ -2088,13 +2112,14 @@ function showTeacher(idx,fromModal=false){
    html+='<tr><td><span class="clickable subject" data-id="'+sid+'">'+sname+'</span></td><td class="num">'+s.count+'</td><td class="num">'+s.avg+'</td></tr>';});
  html+='</table>';
  const params=[
- ['Priority',imp,boldImp],
- ['Arrive early',full.arrive?'yes':'no',boldArr],
- ['Gap hours',stats.gap],
- ['At school',stats.time],
- ['Total classes',stats.totalClasses],
- ['Average size',stats.avgSize],
- ['Penalty',full.penalty.toFixed(1)]
+  ['Priority',imp,boldImp],
+  ['Arrive early',full.arrive?'yes':'no',boldArr],
+  ['Gap hours',stats.gap],
+  ['At school',stats.time],
+  ['Load %',full.load],
+  ['Total classes',stats.totalClasses],
+  ['Average size',stats.avgSize],
+  ['Penalty',full.penalty.toFixed(1)]
  ];
  html+='<h3>Configuration</h3>'+makeParamTable(params);
  openModal(html,!fromModal);

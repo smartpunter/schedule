@@ -1,62 +1,128 @@
 Это проект для оптимизации расписания школы.
+
 Все комментарии в коде пиши на английском.
 
-# Описание конфигурации.
+Проект полностью функционален, но требует полного рефакторинга для улучшения скорости для больших школ.
 
-В файле config-example.json находится пример, как выглядит конфиграционный файл, он неполный и содержит ошибки (например не все предметы имеют своих учителей), но даёт представление о структуре данных.
+Основная часть находится в функции build_model файла newSchedule.py, остальное это генерация интерфейса.
+В файле config-example.json находится вся информация о доступных настройках и ограничениях модели.
 
-Блок settings, объект
-Задаёт различные параметры системы. Каждое значение - это массив, первый элемент это собственно значение параметра, второй элемент - строка, описывающая параметр. Этакая документация.
-- defaultTeacherImportance - базовый уровень "важности" для учителя
-- defaultStudentImportance - базовый уровень важности для ученика
-- defaultOptimalSlot - оптимальный слот по умолчанию, если не задан для предмета. Первый урок это слот номер 0.
-- maxTeacherSlots - сколько уроков учитель может провести подряд, после чего ему нужен перерыв.
-- maxStudentSlots - сколько уроков ученик может отсидеть подряд, после чего должен быть перерыв.
-
-Блок penalties, объект
-Задаёт параметры для системы штрафов, формат аналогичен блоку settings.
-- gapTeacher - сколько штрафных баллов получает расписание, если у учителя есть "окно" (то есть неиспользуемое время)
-- gapStudent - сколько штрафных баллов получает расписание, если у студента есть "окно"
-- unoptimalSlot - сколько штрафных баллов получает расписание за отклонение предмета от оптимального слота.
-
-Блок days, массив объектов
-Внутри системы используются индексы массива, при выводе данных используется обязательное поле "name".
-- обязательный массив slots - список доступных временных слотов. Например если урок должен идти два учебных часа, то он может занять, например, слот 0 и слот 1 первого дня (с именем "Monday"). 
-
-Блок cabinets, объект
-Ключ объекта - уникальный айди помещения, где могут проводиться экзамен.
-- Обязательное значение capacity - целое положительное число наибольшего количества учеников, которые могут заниматься в классе одновременно.
-
-Блок subjects, объект
-Ключ - уникальный айди предмета (обычно комбинация класс+предмет).
-- обязательный массив classes задаёт формат занятий. Например массив [2,1] обозначает, что первое занятие по предмету должно идти два учебных блока подряд, а второе занятие, которое будет позже, занимает один учебный блок. Занятия обязательно должны проходить в различные дни и обязательно должны идти указанное число блоков подряд.
-- опциональный массив cabinets задаёт, в каких классах могут проводиться уроки. Если массив не задан, то любой класс подходит, если задан - то только в одном из указанных помещений.
-
-Блок teachers, массив объектов
-Внутри системы используются индексы массива, при выводе данных используется обязательное поле "name".
-- Обязательный массив subjects содержит коды предметов, которые данный учитель может преподавать. Один предмет могут преподавать несколько учителей.
-- Опциональный параметр importance показывает уровень важности учителя, если он опущен, то считать его равным значению settings.defaultTeacherImportance
-
-Блок students, массив объектов
-Аналогично блоку teachers, внутри системы используются индексы массива, при выводе - обязательное поле name.
-- Обязательный массив subjects задаёт, какие предметы ученик должен изучать.
-- Опциональное значение group обозначает, что это групповые занятия, у всех одинаковые уроки, положительное целое число задаёт сколько человек находится в этой группе. Если его нет, то считать количество учеников равным единице (индивидуальный студент).
-- Опциональный параметр importance показывает уровень важности ученика, если он опущен, то считать его равным значению settings.defaultStudentImportance
+При запросах об оптимизации модели проанализируй логику работы функции build_model, трогать остальные части скрипта нет необходимости, там работа с уже сгенерированными данными.
 
 
-# Описание логики работы
 
-Это задача на оптимизацию школьного расписания. Мы минимизируем штрафные баллы. 
+# Guidelines for Rewriting the Timetabling Project
 
-Учителя могут приходить в школу в любое время. Например, если у учителя первый урок за день будет в третьем слоте, он не получает штраф за первые два слота, так как приходит в этот день не к первому слоту, а к третьему.
 
-Ученики же обязаны приходить в школу к первому (с индексом 0) слоту, даже если у них нет урока в этом слоте. Если в расписании ученика первый урок дня будет в третьем слоте, то он ПОЛУЧАЕТ штраф за первые два слота, так как вынужден находиться в школе и не учиться. Это называется самоподготовка.
+## 0. High‑level Goals
 
-Один учитель может вести только один урок в данном слоте
-Один ученик может присутствовать только на одном уроке в данном слоте.
-Разные учителя могут вести один и тот же предмет, в том числе в одном слоте.
-Каждый ученик обязан посетить ровно заданное количество классов для каждого изучаемого предмета.
-Порядок и длина классов для каждого предмета должны быть строго равны заданным параметрам в classes. При заданных [2,1,1,1] это значит, что у нас должны быть занятия в четырёх разных днях, сначала (в день с наименьшим индексом) занятие занимает два слота, затем три раза занятия по одному слоту.
-Учителя и ученики не могут посещать/вести больше определенного числа уроков подряд (параметры maxTeacherSlots и maxStudentSlots).
+1. **Shrink the decision space** by replacing thousands of BoolVars with compact interval‑based constructs.
+2. **Accelerate solve times** through smarter preprocessing and a staged search (feasible → optimal).
+3. **Keep the codebase testable & maintainable** by strictly separating data, model, and search layers.
 
-Таким образом, каждый назначенный блок имеет штрафные баллы. Баллы за промежутки в расписании учеников и учителей, баллы за неоптимальные слоты. Целевая функция, которую надо минимизировать, является суммой штрафных баллов каждого человека (ученика и учителя). Человек получает штраф за gap, если есть, получает штраф за отклонение от оптимального слота (таким образом, большие классы получают больше штрафных баллов за отклонение от оптимума, так как штраф начисляется каждому ученику. Учителя штраф за неоптмальный слот не получают). И затем этот штраф умножается на число Importance уникальное для каждого человека. И потом - на вес ученика/учителя (teachersPenaltyWeight и studentsPenaltyWeight).
+---
+
+## 1. Directory/Layout Skeleton
+
+Оптимизированный код будет находиться в папке "fast", он будет разбит на несколько файлов и один оркестратор doSchedule.py находящийся в корне, который их подключает и проходит весь цикл:
+1. Сначала препроцесснгом обрабатывается файл конфигурации, проводятся проверки и оптимизации.
+2. Затем запускается простой солвер, без оптимизации, который находит стартовое решение и убеждается, что оно существует.
+2. Затем строится и запускается модель с оптимизациями всех требований, генерирующая оптимальное расписание.
+3. После на основании этого расписания генерируется html интерфейс и выводятся отчёты в консоль.
+
+---
+
+## 2. Pre‑processing Module (`preprocessing.py`)  (Rec 5)
+
+| Task    | Detail                                                                                                                                                                  |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **2.1** | Parse raw CSV/JSON of classes, teachers, rooms, availability.                                                                                                           |
+| **2.2** | *Feasible domain filtering*: For each lesson compute allowed `(day, slot)` pairs based on teacher/room availability & school calendar. Remove impossible options early. |
+| **2.3** | Map teachers, student groups, cabinets to **contiguous integer IDs**. Export to `namedtuple`/`pydantic` objects for type safety.                                        |
+| **2.4** | Serialize the filtered domain (`.pkl` or in‑memory) for quick reuse.                                                                                                    |
+
+---
+
+## 3. Model Construction (`model.py`)
+
+### 3.1 Interval Creation (Rec 1)
+
+```python
+# pseudocode
+for cls in classes:
+    start = model.NewIntVarFromDomain(cls.domain, f"start_{cls.id}")
+    interval = model.NewOptionalIntervalVar(start, cls.duration, start + cls.duration,
+                                            presence_literal=model.NewBoolVar(f"presence_{cls.id}"),
+                                            name=f"lesson_{cls.id}")
+```
+
+*Store the `interval` and its `start` for later constraints and penalties.*
+
+### 3.2 Resource Constraints (Rec 2 & 7)
+
+| Resource                     | Technique                                            |
+| ---------------------------- | ---------------------------------------------------- |
+| **Teacher (capacity 1)**     | `model.AddNoOverlap(teacher_intervals[id])`          |
+| **Cabinet (capacity ≥1)**    | `model.AddCumulative(room_tasks, demands, capacity)` |
+| **Student group (optional)** | `AddNoOverlap` (if exclusivity needed).              |
+
+Make helper builders: `add_teacher_constraints()`, `add_room_constraints()`.
+
+### 3.3 Auxiliary Day IntVars (Rec 3)
+
+```python
+slots_per_day = constants.SLOTS_PER_DAY
+# day_i = start_i // slots_per_day
+model.AddDivisionEquality(day_var, start_var, slots_per_day)
+```
+
+Use `day_var` to express *consecutive‑days* rules: `model.Add(day_j - day_i != 1)` etc.
+
+### 3.4 Penalties & Gaps via Arithmetic (Rec 4)
+
+*Example*: Optimal start slot penalty.
+
+```python
+diff = model.NewIntVar(-max_slot, max_slot, f"diff_{cls.id}")
+model.Add(diff == start - cls.optimal_slot)
+abs_diff = model.NewIntVar(0, max_slot, f"abs_diff_{cls.id}")
+model.AddAbsEquality(abs_diff, diff)
+model.AddWeightedSum([abs_diff], [weight], total_penalty)
+```
+
+Apply similar patterns for **gap length**, **streak length**, etc., by sorting a day’s intervals and using `StartExpr()`/`EndExpr()` differences.
+
+---
+
+## 4. Two‑Phase Search (`search.py`) (Rec 6)
+
+| Phase       | Settings                                                                                                                                                       | Purpose                                                   |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| **Phase 1** | `model.Minimize(0)` (ignore soft) <br> decision builder: `MODEL_FIRST_SOLUTION`                                                                                | Rapidly obtain *any* feasible timetable.                  |
+| **Phase 2** | Unfreeze intervals; minimize total penalty expr. <br> Use **Large Neighborhood Search** with fragments: \* all lessons of a teacher, \* a day’s schedule, etc. | Improve objective without restarting search from scratch. |
+
+Implement CLI flags `--phase1` / `--phase2` for experimentation.
+
+---
+
+## 5. Coding Standards & CI
+
+* **English‑only comments & docstrings** (matches repo rules).
+* Type‑annotate all public functions; run `mypy` in CI.
+* Unit tests for each helper; E2E test that solves a mini‑school instance < 1 s.
+* Default black & isort formatting; pre‑commit hooks.
+
+---
+
+## 6. Task Breakdown by Role
+
+| Role                   | Responsibilities                                           |
+| ---------------------- | ---------------------------------------------------------- |
+| **Data Engineer**      | Section 2 – build preprocessing pipeline & fixtures.       |
+| **Constraint Modeler** | Section 3 – interval creation & resource constraints.      |
+| **Penalty Designer**   | Section 3.4 – translate all soft rules into arithmetic.    |
+| **Search Tuner**       | Section 4 – parameterise LNS, evaluate runtime vs quality. |
+| **Dev Ops**            | Section 5 – CI, linting, container images for solver runs. |
+
+---
+

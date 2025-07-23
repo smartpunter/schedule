@@ -8,7 +8,7 @@ from typing import Any, Optional
 from fast.preprocessing import preprocess
 from fast.model import build_feasible_model, build_optimized_model
 from fast.search import solve_model
-from newSchedule import generate_html
+from fast.html import generate_html
 
 
 def run(config_path: str, html_path: str | None = None) -> None:

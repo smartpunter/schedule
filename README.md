@@ -72,7 +72,9 @@ Advanced users can provide three optional parameters: a config file, the JSON ou
 python newSchedule.py schedule-config.json schedule.json schedule.html
 ```
 
-Add `--feasibility` to only verify that a schedule is possible. The solver runs for up to 60 seconds and reports the result without generating files.
+Set `"objective": "check"` in the configuration to only verify that a schedule is possible.
+THIS SEARCHES FOR ANY SOLUTION AND DOES NOT OPTIMISE PENALTIES. Use `"total"` or
+`"fair"` to find the best timetable.
 
 While the solver runs you will see lines similar to
 
@@ -87,7 +89,7 @@ Press **Ctrl+C** to stop early; the best solution so far will be saved. The sear
 The configuration file is divided into several sections. Values are stored as `[value, "description"]` pairs. The **settings**, **defaults** and **penalties** blocks are required. The **model** block is optional and should only be changed if you understand the effects.
 
 ### settings (required)
-- **objective** – `"total"` minimises the sum of all penalties; `"fair"` tries to distribute penalties evenly. *(default `"total"`)*
+- **objective** – `"total"` minimises the sum of all penalties; `"fair"` balances penalties between teachers and students; `"check"` only tests if any schedule is possible. *(default `"total"`)*
 - **teacherAsStudents** – how many student opinions one teacher counts as when calculating penalties. *(default 15)*
 
 ### defaults (required)

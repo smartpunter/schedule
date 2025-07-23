@@ -2229,12 +2229,10 @@ buildStudents();
         fh.write(html)
 
 
-def check_feasibility(cfg: Dict[str, Any], time_limit: int = 60) -> bool:
-    """Return True if a feasible schedule exists within the time limit."""
+def check_feasibility(cfg: Dict[str, Any]) -> bool:
+    """Return True if a feasible schedule exists."""
     cfg_copy = copy.deepcopy(cfg)
-    model_cfg = cfg_copy.setdefault("model", {})
-    model_cfg["maxTime"] = time_limit
-    model_cfg["showProgress"] = False
+    cfg_copy.setdefault("model", {})["showProgress"] = False
 
     try:
         build_model(cfg_copy, feasibility_only=True)
@@ -2244,9 +2242,8 @@ def check_feasibility(cfg: Dict[str, Any], time_limit: int = 60) -> bool:
 
 
 def main() -> None:
-    args = [a for a in sys.argv[1:] if a not in ("-y", "--feasibility")]
+    args = [a for a in sys.argv[1:] if a != "-y"]
     auto_yes = "-y" in sys.argv[1:]
-    check_only = "--feasibility" in sys.argv[1:]
 
     cfg_path = args[0] if len(args) >= 1 else "schedule-config.json"
     out_path = args[1] if len(args) >= 2 else "schedule.json"
@@ -2256,8 +2253,11 @@ def main() -> None:
         print(f"Config '{cfg_path}' not found.")
         return
 
+    cfg = load_config(cfg_path)
+
+    obj_mode = cfg.get("settings", {}).get("objective", ["total"])[0]
     skip_solve = False
-    if not check_only and os.path.exists(out_path):
+    if obj_mode != "check" and os.path.exists(out_path):
         if auto_yes:
             skip_solve = True
         else:
@@ -2266,11 +2266,7 @@ def main() -> None:
             )
             skip_solve = ans.strip().lower().startswith("y")
 
-    cfg = load_config(cfg_path)
-
-    student_dups = _detect_duplicates(
-        cfg.get("students", []), ["subjects"]
-    )
+    student_dups = _detect_duplicates(cfg.get("students", []), ["subjects"])
     if student_dups and not skip_solve:
         print("Duplicate entities detected:")
         for names in student_dups:
@@ -2280,12 +2276,16 @@ def main() -> None:
             if not ans.strip().lower().startswith("y"):
                 print("Exiting due to duplicates.")
                 return
-    if check_only:
+
+    if obj_mode == "check":
         feasible = check_feasibility(cfg)
         if feasible:
-            print("A feasible schedule exists.")
+            print(
+                "A feasible schedule exists. THIS IS NOT OPTIMAL. "
+                "Set objective to 'total' or 'fair' for optimisation."
+            )
         else:
-            print("No feasible schedule found within the time limit.")
+            print("No feasible schedule found.")
         return
 
     fresh = not skip_solve

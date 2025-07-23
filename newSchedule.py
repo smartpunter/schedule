@@ -1008,6 +1008,7 @@ def build_model(
     solver.parameters.num_search_workers = workers
     solver.parameters.log_search_progress = show_progress
     if feasibility_only:
+        solver.parameters.log_search_progress = True
         solver.parameters.search_branching = (
             cp_model.PORTFOLIO_WITH_QUICK_RESTART_SEARCH
         )
@@ -2232,7 +2233,6 @@ buildStudents();
 def check_feasibility(cfg: Dict[str, Any]) -> bool:
     """Return True if a feasible schedule exists."""
     cfg_copy = copy.deepcopy(cfg)
-    cfg_copy.setdefault("model", {})["showProgress"] = False
 
     try:
         build_model(cfg_copy, feasibility_only=True)

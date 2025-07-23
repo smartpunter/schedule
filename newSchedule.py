@@ -303,8 +303,14 @@ def _prepare_fixed_classes(
     return fixed
 
 
-def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]]]:
-    """Build schedule using CP-SAT optimisation."""
+def build_model(
+    cfg: Dict[str, Any], feasibility_only: bool = False
+) -> Dict[str, Dict[int, List[Dict[str, Any]]]]:
+    """Build schedule using CP-SAT optimisation.
+
+    When ``feasibility_only`` is True the penalties are ignored and the
+    solver searches for any schedule that satisfies hard constraints.
+    """
     days = cfg["days"]
     subjects = cfg["subjects"]
     teachers = cfg.get("teachers", [])
@@ -932,7 +938,9 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
 
     consecutive_expr = sum(teacher_consec_exprs.values()) if consecutive_vars else 0
 
-    if obj_mode == "total":
+    if feasibility_only:
+        model.Minimize(0)
+    elif obj_mode == "total":
         total_expr = (
             sum(teacher_gap_exprs.values())
             + sum(teacher_unopt_exprs.values())
@@ -999,6 +1007,10 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
     solver.parameters.max_time_in_seconds = max_time
     solver.parameters.num_search_workers = workers
     solver.parameters.log_search_progress = show_progress
+    if feasibility_only:
+        solver.parameters.search_branching = (
+            cp_model.PORTFOLIO_WITH_QUICK_RESTART_SEARCH
+        )
 
     status = solver.Solve(model)
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
@@ -2224,16 +2236,8 @@ def check_feasibility(cfg: Dict[str, Any], time_limit: int = 60) -> bool:
     model_cfg["maxTime"] = time_limit
     model_cfg["showProgress"] = False
 
-    penalties = cfg_copy.setdefault("penalties", {})
-    penalties["gapTeacher"] = 0
-    penalties["gapStudent"] = 0
-    penalties["unoptimalSlot"] = 0
-    penalties["consecutiveClass"] = 0
-    penalties["teacherLessonStreak"] = [0]
-    penalties["studentLessonStreak"] = [0]
-
     try:
-        build_model(cfg_copy)
+        build_model(cfg_copy, feasibility_only=True)
     except RuntimeError:
         return False
     return True

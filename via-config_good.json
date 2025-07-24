@@ -45,11 +45,11 @@
   },
 
   "teachers": {
-  	"Ana": { 
+    "Ana": { 
       "allowedSlots": { "Monday": [], "Tuesday": [], "Thursday": [] },
       "forbiddenSlots": { "Monday": [0], "Tuesday": [0], "Thursday": [0] }
     },
-  	"Andrej": { 
+    "Andrej": { 
       "forbiddenSlots": { "Monday": [0, 1], "Tuesday": [0, 1], "Wednesday": [0, 1], "Thursday": [0, 1], "Friday": [0, 1] }
     },
     "Angie": { 
@@ -60,11 +60,11 @@
     },
     "David": { },
     "Derek": {
-    	"importance": 8
+      "importance": 8
     },
     "Domen": { 
-    	"arriveEarly": true, "importance": 11,
-    	"allowedSlots": { "Monday": [], "Wednesday": [], "Thursday": [] },
+      "arriveEarly": true, "importance": 11,
+      "allowedSlots": { "Monday": [], "Wednesday": [], "Thursday": [] },
       "forbiddenSlots": { "Monday": [0, 1], "Wednesday": [0, 1], "Thursday": [0, 1]}
     },
     "Jasminka": { 
@@ -78,15 +78,15 @@
     },
     "Mathieu": { },
     "Nick": { 
-    	"importance": 18
+      "importance": 18
     },
     "Polona": { 
-    	"importance": 15
+      "importance": 15
     },
     "Sara": { },
     "Saša": { },
     "Tamara": {
-    	"importance": 15
+      "importance": 15
     },
     "Chemistry Lab Owner": {
       "allowedSlots": { "Wednesday": [6, 7], "Friday": [6, 7] }
@@ -98,11 +98,11 @@
 
   "subjects": {
 
-    "Combined_Mathematics": { "teachers": ["Polona", "Nick"], "requiredTeachers": 2, "optimalSlot": 0, "classes": [1, 1, 1, 1], "cabinets": ["#11 - Y10 Home", "#12 - pY10 Home"], "requiredCabinets": 2 },
-		"Combined_Languages": { "teachers": ["Angie", "Andrej", "Mathieu"], "requiredTeachers": 3, "optimalSlot": 3, "classes": [1, 1, 1], "cabinets": ["#12 - pY10 Home", "#11 - Y10 Home", "#23 - Language", "K3 - Reserve", "K4 - Reserve"], "requiredCabinets": 3 },
+    "Combined_Mathematics": { "teachers": ["Polona", "Nick"], "requiredTeachers": 2, "optimalSlot": 0, "avoidConsecutive": false, "classes": [1, 1, 1, 1], "cabinets": ["#11 - Y10 Home", "#12 - pY10 Home"], "requiredCabinets": 2 },
+    "Combined_Languages": { "teachers": ["Angie", "Andrej", "Mathieu"], "requiredTeachers": 3, "optimalSlot": 3, "classes": [1, 1, 1], "cabinets": ["#12 - pY10 Home", "#11 - Y10 Home", "#23 - Language", "K3 - Reserve", "K4 - Reserve"], "requiredCabinets": 3 },
     "Combined_PE": { "teachers": ["Gym Owner", "Sara", "Nick", "Kristina"], "primaryTeachers": ["Gym Owner"], "requiredTeachers": 2, "classes": [1, 1, 1], "cabinets": ["Gym"] },
     
-		"pY10_English_Language": { "teachers": ["Tamara"], "optimalSlot": 1, "classes": [1, 1], "cabinets": ["#12 - pY10 Home"] },
+    "pY10_English_Language": { "teachers": ["Tamara"], "optimalSlot": 1, "classes": [1, 1], "cabinets": ["#12 - pY10 Home"] },
     "pY10_English_Literature": { "teachers": ["Connor"], "optimalSlot": 1, "classes": [1, 1, 1], "cabinets": ["#12 - pY10 Home"] },
     "pY10_History": { "teachers": ["Derek"], "optimalSlot": 2, "classes": [1, 1, 1], "cabinets": ["#12 - pY10 Home"] },
     "pY10_Geography": { "teachers": ["Ana"], "optimalSlot": 4, "classes": [1, 1], "cabinets": ["#12 - pY10 Home"] },
@@ -119,7 +119,7 @@
     "Y10_Physics": { "teachers": ["Kristina"], "optimalSlot": 1, "classes": [1, 1, 1], "cabinets": ["#11 - Y10 Home", "K2 - Physics"] },
     
     "Y11_Language": { "teachers": ["Angie", "Mathieu"], "requiredTeachers": 2, "optimalSlot": 4, "classes": [1, 1, 1], "cabinets": ["P1 - Y11 Home", "#23 - Language"], "requiredCabinets": 2 },
-    "Y11_Mathematics": { "teachers": ["Saša"], "optimalSlot": 0, "classes": [1, 1, 1, 1], "cabinets": ["P1 - Y11 Home"] },
+    "Y11_Mathematics": { "teachers": ["Saša"], "optimalSlot": 0, "classes": [1, 1, 1, 1], "avoidConsecutive": false, "cabinets": ["P1 - Y11 Home"] },
     "Y11_English_Language": { "teachers": ["Tamara"], "optimalSlot": 1, "classes": [1, 1], "cabinets": ["P1 - Y11 Home"] },
     "Y11_English_Literature": { "teachers": ["Connor"], "optimalSlot": 2, "classes": [1, 1, 1], "cabinets": ["P1 - Y11 Home"] },
     "Y11_History": { "teachers": ["Derek", "David"], "requiredTeachers": 2, "optimalSlot": 2, "classes": [1, 1, 1], "cabinets": ["P1 - Y11 Home"]},
@@ -148,7 +148,7 @@
     "Y12_Biology_HL": { "teachers": ["Klemen"], "optimalSlot": 3, "classes": [2], "cabinets": ["K5 - Biology"] },
     "Y12_Physics_HL": { "teachers": ["Kristina"], "optimalSlot": 1, "classes": [2, 2, 1], "cabinets": ["K2 - Physics"] },
     "Y12_Chemistry_HL": { "teachers": ["Jasminka"], "optimalSlot": 2, "classes": [2, 1] },
-    "Y12_Chemistry_Lab": { "teachers": ["Jasminka", "Chemistry Lab Owner"], "requiredTeachers": 2, "optimalSlot": 7, "classes": [2] },
+    "Y12_Chemistry_Lab": { "teachers": ["Jasminka", "Chemistry Lab Owner"], "requiredTeachers": 2, "optimalSlot": 7, "classes": [2], "cabinets": ["Chemistry Lab"]  },
     "Y12_MathAA_HL": { "teachers": ["Saša"], "optimalSlot": 1, "classes": [2, 2, 1] },
     "Y12_MathAA_SL": { "teachers": ["Saša"], "optimalSlot": 1, "classes": [2, 1, 1] },
     "Y12_MathAI_SL": { "teachers": ["Saša"], "optimalSlot": 1, "classes": [2, 1, 1] },
@@ -174,7 +174,7 @@
     "Y13_Biology_HL": { "teachers": ["Klemen"], "optimalSlot": 3, "classes": [2], "cabinets": ["K5 - Biology"] },
     "Y13_Physics_HL": { "teachers": ["Kristina"], "optimalSlot": 1, "classes": [2, 2, 1], "cabinets": ["K2 - Physics"] },
     "Y13_Chemistry_HL": { "teachers": ["Jasminka"], "optimalSlot": 2, "classes": [2, 1] },
-    "Y13_Chemistry_Lab": { "teachers": ["Jasminka", "Chemistry Lab Owner"], "requiredTeachers": 2, "optimalSlot": 7, "classes": [2] },
+    "Y13_Chemistry_Lab": { "teachers": ["Jasminka", "Chemistry Lab Owner"], "requiredTeachers": 2, "optimalSlot": 7, "classes": [2], "cabinets": ["Chemistry Lab"] },
     "Y13_MathAA_HL": { "teachers": ["Nick"], "optimalSlot": 1, "classes": [2, 2, 1], "cabinets": ["#22 - Y13 Home"] },
     "Y13_MathAA_SL": { "teachers": ["Nick"], "optimalSlot": 1, "classes": [2, 1, 1], "cabinets": ["#22 - Y13 Home"] },
     "Y13_MathAI_SL": { "teachers": ["Nick"], "optimalSlot": 1, "classes": [2, 1, 1], "cabinets": ["#22 - Y13 Home"] },

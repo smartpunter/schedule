@@ -91,6 +91,7 @@ The configuration file is divided into several sections. Values are stored as `[
 ### settings (required)
 - **objective** – `"total"` minimises the sum of all penalties; `"fair"` balances penalties between teachers and students; `"check"` only tests if any schedule is possible. *(default `"total"`)*
 - **teacherAsStudents** – how many student opinions one teacher counts as when calculating penalties. *(default 15)*
+- **duplicatesPenalty** – penalty applied when a teacher or student appears in more than one lesson in the same slot. If greater than zero duplicates are allowed. *(default 0)*
 
 ### defaults (required)
 - **teacherImportance** – base weight for teachers. Higher values make teacher gaps more costly. *(default 20)*

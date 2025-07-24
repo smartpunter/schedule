@@ -425,13 +425,17 @@ def build_fast_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, 
                         choices.append(idx_map[(d_idx, sl)])
                 if not choices:
                     raise ValueError(f"No slots available for {sid} class {idx}")
-                start_var = model.NewIntVarFromDomain(cp_model.Domain.FromValues(choices), f"start_{sid}_{idx}")
+                choice_var = model.NewIntVar(0, len(choices) - 1, f"choice_{sid}_{idx}")
+                start_var = model.NewIntVarFromDomain(
+                    cp_model.Domain.FromValues(choices), f"start_{sid}_{idx}"
+                )
                 day_vals = [idx_to_day[c] for c in choices]
                 slot_vals = [idx_to_slot[c] for c in choices]
                 day_var = model.NewIntVar(0, len(days) - 1, f"day_{sid}_{idx}")
                 slot_var = model.NewIntVar(0, max(idx_to_slot), f"slot_{sid}_{idx}")
-                model.AddElement(start_var, day_vals, day_var)
-                model.AddElement(start_var, slot_vals, slot_var)
+                model.AddElement(choice_var, choices, start_var)
+                model.AddElement(choice_var, day_vals, day_var)
+                model.AddElement(choice_var, slot_vals, slot_var)
                 teachers_list = None
                 cabinets_list = None
 

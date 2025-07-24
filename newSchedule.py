@@ -1081,8 +1081,6 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                 )
             candidates[key] = cand_list
 
-    obj_mode = settings.get("objective", ["total"])[0]
-
     # at most one class of same subject per day
     for sid, subj in subjects.items():
         class_count = len(subj["classes"])
@@ -1330,11 +1328,10 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
         count = len(subj["classes"])
         if count <= 1:
             continue
-        for j in range(count):
-            pair_vars = []
-            for i in range(count):
-                if i == j:
-                    continue
+        # gather all (i, j) pairs once and reuse per class index
+        pair_by_class: Dict[int, List[cp_model.IntVar]] = defaultdict(list)
+        for i in range(count):
+            for j in range(i + 1, count):
                 var = model.NewBoolVar(f"cons_{sid}_{i}_{j}")
                 model.Add(
                     class_day_idx[(sid, j)] == class_day_idx[(sid, i)] + 1
@@ -1342,12 +1339,16 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                 model.Add(
                     class_day_idx[(sid, j)] != class_day_idx[(sid, i)] + 1
                 ).OnlyEnforceIf(var.Not())
-                pair_vars.append(var)
-            if pair_vars:
-                any_v = model.NewBoolVar(f"cons_any_{sid}_{j}")
-                model.AddMaxEquality(any_v, pair_vars)
+                pair_by_class[i].append(var)
+                pair_by_class[j].append(var)
+
+        for idx in range(count):
+            pv = pair_by_class.get(idx)
+            if pv:
+                any_v = model.NewBoolVar(f"cons_any_{sid}_{idx}")
+                model.AddMaxEquality(any_v, pv)
                 consecutive_vars.append(any_v)
-                consecutive_map[(sid, j)] = any_v
+                consecutive_map[(sid, idx)] = any_v
 
     # objective
     model_params = cfg.get("model", {})

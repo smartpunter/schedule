@@ -132,6 +132,101 @@ def load_config(path: str = "schedule-config.json") -> Dict[str, Any]:
     return data
 
 
+def validate_config(cfg: Dict[str, Any]) -> None:
+    """Ensure all referenced entities exist and slots are valid."""
+    days = {d["name"]: set(d["slots"]) for d in cfg.get("days", [])}
+    subjects = cfg.get("subjects", {})
+    teachers = {t["name"] for t in cfg.get("teachers", [])}
+    cabinets = set(cfg.get("cabinets", {}))
+
+    for stu in cfg.get("students", []):
+        for sid in stu.get("subjects", []):
+            if sid not in subjects:
+                raise ValueError(
+                    f"Student {stu.get('name')} references unknown subject '{sid}'"
+                )
+
+    for sid, subj in subjects.items():
+        for t in subj.get("teachers", []):
+            if t not in teachers:
+                raise ValueError(f"Subject {sid} references unknown teacher '{t}'")
+        for cab in subj.get("cabinets", []):
+            if cab not in cabinets:
+                raise ValueError(f"Subject {sid} references unknown cabinet '{cab}'")
+        for pt in subj.get("primaryTeachers", []):
+            if pt not in teachers:
+                raise ValueError(
+                    f"Subject {sid} references unknown primary teacher '{pt}'"
+                )
+
+    for t in cfg.get("teachers", []):
+        for sid in t.get("subjects", []):
+            if sid not in subjects:
+                raise ValueError(
+                    f"Teacher {t['name']} assigned to unknown subject '{sid}'"
+                )
+        _check_slot_limits(days, t, f"Teacher {t['name']}")
+
+    for s in cfg.get("students", []):
+        _check_slot_limits(days, s, f"Student {s['name']}")
+
+    for cname, cab in cfg.get("cabinets", {}).items():
+        for sid in cab.get("allowedSubjects", []):
+            if sid not in subjects:
+                raise ValueError(
+                    f"Cabinet {cname} allows unknown subject '{sid}'"
+                )
+
+    for lesson in cfg.get("lessons", []):
+        if not isinstance(lesson, list) or len(lesson) < 4:
+            raise ValueError(
+                "Lesson entry must contain at least day, slot, subject and cabinet(s)"
+            )
+        day, slot, sid, cabs = lesson[:4]
+        if day not in days:
+            raise ValueError(f"Unknown day '{day}' in lesson {lesson}")
+        if int(slot) not in days[day]:
+            raise ValueError(f"Slot {slot} not available on {day}")
+        if sid not in subjects:
+            raise ValueError(f"Unknown subject '{sid}' in lesson {lesson}")
+        cab_list = [cabs] if isinstance(cabs, str) else cabs
+        for cab in cab_list:
+            if cab not in cabinets:
+                raise ValueError(f"Unknown cabinet '{cab}' in lesson {lesson}")
+        if len(lesson) >= 5:
+            teachers_part = None
+            if len(lesson) == 5 and not isinstance(lesson[4], int):
+                teachers_part = lesson[4]
+            elif len(lesson) >= 6:
+                teachers_part = lesson[4]
+            if teachers_part is not None:
+                t_list = (
+                    [teachers_part]
+                    if isinstance(teachers_part, str)
+                    else list(teachers_part)
+                )
+                for t in t_list:
+                    if t not in teachers:
+                        raise ValueError(
+                            f"Unknown teacher '{t}' in lesson {lesson}"
+                        )
+
+
+def _check_slot_limits(days: Dict[str, Set[int]], entry: Dict[str, Any], name: str) -> None:
+    """Validate slot restrictions for a teacher or student."""
+    for key in ("allowedSlots", "forbiddenSlots"):
+        limits = entry.get(key, {})
+        for day, slots in limits.items():
+            if day not in days:
+                raise ValueError(f"{name} uses unknown day '{day}' in {key}")
+            if slots:
+                for slot in slots:
+                    if slot not in days[day]:
+                        raise ValueError(
+                            f"{name} uses invalid slot {slot} on {day} in {key}"
+                        )
+
+
 def _init_schedule(days: List[Dict[str, Any]]) -> Dict[str, Dict[int, List[Dict[str, Any]]]]:
     """Prepare empty schedule structure."""
     schedule = {}
@@ -2271,6 +2366,7 @@ def main() -> None:
         return
 
     cfg = load_config(cfg_path)
+    validate_config(cfg)
 
     obj_mode = cfg.get("settings", {}).get("objective", ["total"])[0]
     skip_solve = False

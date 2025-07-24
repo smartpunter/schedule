@@ -1,7 +1,8 @@
 {
   "settings": {
     "objective": ["total", "Optimisation goal: 'total' minimises all penalties, 'fair' balances penalties between teachers and students."],
-    "teacherAsStudents": [15, "How many student opinions a teacher counts for when calculating penalties"]
+    "teacherAsStudents": [15, "How many student opinions a teacher counts for when calculating penalties"],
+    "duplicatesPenalty": [0, "Penalty for overlapping lessons per teacher or student in a slot; if >0 duplicates are allowed"]
   },
   "defaults": {
     "teacherImportance": [20, "Default teacher weight in penalties. Higher value makes gaps for teachers more expensive."],

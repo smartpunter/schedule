@@ -878,6 +878,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
     student_streak_list = penalties.get("studentLessonStreak", [[]])[0]
     settings = cfg.get("settings", {})
     teacher_as_students = settings.get("teacherAsStudents", [15])[0]
+    duplicates_pen_val = settings.get("duplicatesPenalty", [0])[0]
     defaults = cfg.get("defaults", {})
     default_permutations = defaults.get("permutations", [True])[0]
     default_avoid_consecutive = defaults.get("avoidConsecutive", [True])[0]
@@ -1140,7 +1141,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
 
     for t, day_map in teacher_intervals.items():
         for ivs in day_map.values():
-            if ivs:
+            if ivs and duplicates_pen_val <= 0:
                 model.AddNoOverlap([iv[0] for iv in ivs])
     for c, day_map in cabinet_intervals.items():
         for ivs in day_map.values():
@@ -1148,12 +1149,14 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                 model.AddNoOverlap([iv[0] for iv in ivs])
     for s, day_map in student_intervals.items():
         for ivs in day_map.values():
-            if ivs:
+            if ivs and duplicates_pen_val <= 0:
                 model.AddNoOverlap([iv[0] for iv in ivs])
 
     # build slot variables for teachers and students based on intervals
     teacher_slot = {}
     student_slot = {}
+    teacher_dup_exprs_map = {t: [] for t in teacher_names}
+    student_dup_exprs_map = {s: [] for s in student_importance}
     for day in days:
         dname = day["name"]
         for slot in day["slots"]:
@@ -1166,6 +1169,11 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                 if covering:
                     var = model.NewBoolVar(f"teach_{t}_{dname}_{slot}")
                     model.AddMaxEquality(var, covering)
+                    if duplicates_pen_val > 0 and len(covering) > 1:
+                        expr = (
+                            sum(covering) - var
+                        ) * duplicates_pen_val * teacher_importance[t]
+                        teacher_dup_exprs_map[t].append(expr)
                 else:
                     var = model.NewBoolVar(f"teach_{t}_{dname}_{slot}")
                     model.Add(var == 0)
@@ -1183,6 +1191,11 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                 if covering:
                     var = model.NewBoolVar(f"stud_{sname}_{dname}_{slot}")
                     model.AddMaxEquality(var, covering)
+                    if duplicates_pen_val > 0 and len(covering) > 1:
+                        expr = (
+                            sum(covering) - var
+                        ) * duplicates_pen_val * student_importance[sname] * student_size[sname]
+                        student_dup_exprs_map[sname].append(expr)
                 else:
                     var = model.NewBoolVar(f"stud_{sname}_{dname}_{slot}")
                     model.Add(var == 0)
@@ -1321,6 +1334,13 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
         k: sum(v) if v else 0 for k, v in student_streak_exprs.items()
     }
 
+    teacher_dup_exprs = {
+        t: sum(v) if v else 0 for t, v in teacher_dup_exprs_map.items()
+    }
+    student_dup_exprs = {
+        s: sum(v) if v else 0 for s, v in student_dup_exprs_map.items()
+    }
+
     # penalties for consecutive days of the same subject
     consecutive_vars = []
     consecutive_map = {}
@@ -1416,9 +1436,11 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
             + sum(teacher_unopt_exprs.values())
             + sum(teacher_consec_exprs.values())
             + sum(teacher_streak_exprs.values())
+            + sum(teacher_dup_exprs.values())
             + sum(student_gap_exprs.values())
             + sum(student_unopt_exprs.values())
             + sum(student_streak_exprs.values())
+            + sum(student_dup_exprs.values())
         )
     model.Minimize(total_expr)
 
@@ -1571,8 +1593,12 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
     }
     default_opt = defaults.get("optimalSlot", [0])[0]
 
+    extra_pen = {} if duplicates_pen_val <= 0 else {"duplicate": 0}
     slot_penalties = {
-        day["name"]: {slot: {k: 0 for k in penalties_cfg} for slot in day["slots"]}
+        day["name"]: {
+            slot: {**{k: 0 for k in penalties_cfg}, **extra_pen}
+            for slot in day["slots"]
+        }
         for day in cfg["days"]
     }
     slot_penalty_details = {
@@ -1651,6 +1677,26 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
                             )
                 else:
                     stud_count[sname] = 0
+
+            if duplicates_pen_val > 0:
+                classes = schedule[dname][slot]
+                teach_cnt = defaultdict(int)
+                stud_cnt = defaultdict(int)
+                for cls in classes:
+                    for t in cls.get("teachers", []):
+                        teach_cnt[t] += 1
+                    for s in cls["students"]:
+                        stud_cnt[s] += 1
+                for t, cnt in teach_cnt.items():
+                    if cnt > 1:
+                        p = (cnt - 1) * duplicates_pen_val * teacher_importance.get(t, def_teacher_imp)
+                        slot_penalties[dname][slot]["duplicate"] += p
+                        slot_penalty_details[dname][slot].append({"name": t, "type": "duplicate", "amount": p})
+                for sname, cnt in stud_cnt.items():
+                    if cnt > 1:
+                        p = (cnt - 1) * duplicates_pen_val * student_importance[sname] * student_size.get(sname, 1)
+                        slot_penalties[dname][slot]["duplicate"] += p
+                        slot_penalty_details[dname][slot].append({"name": sname, "type": "duplicate", "amount": p})
 
     # penalties for unoptimal slots, assigned at class start
     for day in cfg["days"]:
@@ -2447,7 +2493,7 @@ function showSlot(day,idx,fromModal=false){
      const amount=list.reduce((a,x)=>a+x.amount,0);
      if(amount>0){
       const names=list.map(p=>{
-        const isTeach=p.type==='gapTeacher'||(p.type==='unoptimalSlot'&&teacherSet.has(p.name))||(p.type==='consecutiveClass'&&teacherSet.has(p.name));
+        const isTeach=p.type==='gapTeacher'||(p.type==='unoptimalSlot'&&teacherSet.has(p.name))||(p.type==='consecutiveClass'&&teacherSet.has(p.name))||(p.type==='duplicate'&&teacherSet.has(p.name));
         const role=isTeach?'teacher':'student';
         return personLink(p.name,role)+' ('+p.amount.toFixed(1)+')';
       }).join(', ');

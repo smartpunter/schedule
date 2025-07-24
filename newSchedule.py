@@ -2179,6 +2179,8 @@ body { font-family: Arial, sans-serif; }
 .hist-item.active { font-weight:bold; color:#000; }
 .clickable { color:#0066cc; cursor:pointer; text-decoration:underline; }
 .sortable { cursor:pointer; }
+.dup-teacher{background:orange;}
+.dup-subject{background:orange;}
 .slot-detail .slot-class{border-top:1px solid #ddd;padding:2px 0;}
 .slot-detail .slot-class:first-child{border-top:none;}
 .detail-line{display:flex;gap:6px;}
@@ -2205,6 +2207,7 @@ body { font-family: Arial, sans-serif; }
 .person-name{flex:0 0 25%;text-align:left;}
 .person-info{flex:0 0 6%;text-align:center;}
 .person-pen{flex:0 0 6%;text-align:center;}
+.person-dup{flex:0 0 6%;text-align:center;}
 .person-hours{flex:0 0 6%;text-align:center;}
 .person-time{flex:0 0 6%;text-align:center;}
 .person-load{flex:0 0 6%;text-align:center;}
@@ -2272,12 +2275,13 @@ function personLink(name,role){
   }
   return name;
 }
-function teacherSpan(name,subj){
+function teacherSpan(name,subj,dup){
   const id=teacherIndex[name];
   const prim=(configData.subjects[subj]||{}).primaryTeachers||[];
   const disp=teacherDisplay[name]||name;
   const inner=prim.includes(name)?'<strong>'+disp+'</strong>':disp;
-  return '<span class="clickable teacher" data-id="'+id+'">'+inner+'</span>';
+  const cls='clickable teacher'+(dup?' dup-teacher':'');
+  return '<span class="'+cls+'" data-id="'+id+'">'+inner+'</span>';
 }
 function cabinetSpan(name){
   return '<span class="clickable cabinet" data-id="'+name+'">'+(cabinetDisplay[name]||name)+'</span>';
@@ -2363,25 +2367,32 @@ function buildTable(){
      cell.className='cell';
      const pVal=Object.values(slot.penalty||{}).reduce((a,b)=>a+b,0);
      minP=Math.min(minP,pVal);maxP=Math.max(maxP,pVal);
-     slot.classes.forEach(cls=>{
-       const block=document.createElement('div');
-       block.className='class-block';
-       const subj=subjectDisplay[cls.subject]||cls.subject;
-       const part=(cls.length>1)?((i-cls.start+1)+'/'+cls.length):'1/1';
-       const l1=document.createElement('div');
-       l1.className='class-line';
-        const rooms=(cls.cabinets||[]).map(c=>cabinetSpan(c)).join(', ');
-        l1.innerHTML='<span class="cls-subj clickable subject" data-id="'+cls.subject+'">'+subj+'</span>'+
-         '<span class="cls-room">'+rooms+'</span>'+
-         '<span class="cls-part">'+part+'</span>';
-       const l2=document.createElement('div');
-       l2.className='class-line';
-      const tNames=(cls.teachers||[]).map(t=>teacherSpan(t,cls.subject)).join(', ');
-       l2.innerHTML='<span class="cls-teach">'+tNames+'</span>'+
-        '<span class="cls-size">'+cls.size+'</span>';
-       block.appendChild(l1);block.appendChild(l2);
-       cell.appendChild(block);
-     });
+    const tDup={};
+    const sDup={};
+    slot.classes.forEach(c=>{
+      (c.teachers||[]).forEach(t=>{tDup[t]=(tDup[t]||0)+1;});
+      c.students.forEach(s=>{sDup[s]=(sDup[s]||0)+1;});
+    });
+    slot.classes.forEach(cls=>{
+      const block=document.createElement('div');
+      block.className='class-block';
+      const subj=subjectDisplay[cls.subject]||cls.subject;
+      const part=(cls.length>1)?((i-cls.start+1)+'/'+cls.length):'1/1';
+      const l1=document.createElement('div');
+      l1.className='class-line';
+      const rooms=(cls.cabinets||[]).map(c=>cabinetSpan(c)).join(', ');
+      const subjCls='cls-subj clickable subject'+(cls.students.some(s=>sDup[s]>1)?' dup-subject':'');
+      l1.innerHTML='<span class="'+subjCls+'" data-id="'+cls.subject+'">'+subj+'</span>'+
+        '<span class="cls-room">'+rooms+'</span>'+
+        '<span class="cls-part">'+part+'</span>';
+      const l2=document.createElement('div');
+      l2.className='class-line';
+      const tNames=(cls.teachers||[]).map(t=>teacherSpan(t,cls.subject,tDup[t]>1)).join(', ');
+      l2.innerHTML='<span class="cls-teach">'+tNames+'</span>'+
+       '<span class="cls-size">'+cls.size+'</span>';
+      block.appendChild(l1);block.appendChild(l2);
+      cell.appendChild(block);
+    });
      const info=document.createElement('div');
      info.className='slot-info';
      info.dataset.day=day.name;info.dataset.slot=i;
@@ -2428,14 +2439,18 @@ function makeGrid(filterFn){
    scheduleData.days.forEach(day=>{
      const slot=day.slots.find(s=>s.slotIndex==i)||{classes:[]};
      html+='<div class="cell">';
+     const tDup={};
+     const sDup={};
+     slot.classes.forEach(c=>{(c.teachers||[]).forEach(t=>{tDup[t]=(tDup[t]||0)+1;});c.students.forEach(s=>{sDup[s]=(sDup[s]||0)+1;});});
      slot.classes.filter(filterFn).forEach(cls=>{
        const subj=subjectDisplay[cls.subject]||cls.subject;
        const part=(cls.length>1)?((i-cls.start+1)+'/'+cls.length):'1/1';
-       const tNames=(cls.teachers||[]).map(t=>teacherSpan(t,cls.subject)).join(', ');
+       const tNames=(cls.teachers||[]).map(t=>teacherSpan(t,cls.subject,tDup[t]>1)).join(', ');
         const rooms=(cls.cabinets||[]).map(c=>cabinetSpan(c)).join(', ');
+        const subjCls='cls-subj clickable subject'+(cls.students.some(s=>sDup[s]>1)?' dup-subject':'');
         html+='<div class="class-block">'+
          '<div class="class-line">'+
-          '<span class="cls-subj clickable subject" data-id="'+cls.subject+'">'+subj+'</span>'+
+          '<span class="'+subjCls+'" data-id="'+cls.subject+'">'+subj+'</span>'+
           '<span class="cls-room">'+rooms+'</span>'+
           '<span class="cls-part">'+part+'</span>'+
         '</div>'+
@@ -2458,13 +2473,17 @@ function showSlot(day,idx,fromModal=false){
  const total=Object.values(slot.penalty||{}).reduce((a,b)=>a+b,0);
  let html='<h2>'+day+' lesson '+(idx+1)+'</h2><p>Total penalty: '+total.toFixed(1)+'</p>';
  html+='<div class="slot-detail">';
+ const tDup={};
+ const sDup={};
+ slot.classes.forEach(c=>{(c.teachers||[]).forEach(t=>{tDup[t]=(tDup[t]||0)+1;});c.students.forEach(s=>{sDup[s]=(sDup[s]||0)+1;});});
  slot.classes.forEach((cls)=>{
    const subj=subjectDisplay[cls.subject]||cls.subject;
    const part=(cls.length>1)?((idx-cls.start+1)+'/'+cls.length):'1/1';
+   const subjCls='detail-subj clickable subject'+(cls.students.some(s=>sDup[s]>1)?' dup-subject':'');
    html+='<div class="slot-class">'+
      '<div class="detail-line">'+
-       '<span class="detail-subj clickable subject" data-id="'+cls.subject+'">'+subj+'</span>'+
-      '<span class="detail-teacher">'+(cls.teachers||[]).map(t=>teacherSpan(t,cls.subject)).join(', ')+'</span>'+
+       '<span class="'+subjCls+'" data-id="'+cls.subject+'">'+subj+'</span>'+
+      '<span class="detail-teacher">'+(cls.teachers||[]).map(t=>teacherSpan(t,cls.subject,tDup[t]>1)).join(', ')+'</span>'+
        '<span class="detail-room">'+(cls.cabinets||[]).map(c=>cabinetSpan(c)).join(', ')+'</span>'+
        '<span class="detail-size">'+cls.size+'</span>'+
        '<span class="detail-part">'+part+'</span>'+
@@ -2555,7 +2574,7 @@ function computeTeacherInfo(name){
  const imp=info.importance!==undefined?info.importance:defImp;
  const allow=info.allowedSlots||null;
  const forbid=info.forbiddenSlots||null;
- let hours=0,gap=0,time=0,subjects={},pen=0,avail=0;
+ let hours=0,gap=0,time=0,subjects={},pen=0,avail=0,dup=0;
   scheduleData.days.forEach(day=>{
    const slots=day.slots;
    const dayStart=slots.length?slots[0].slotIndex:0;
@@ -2572,7 +2591,11 @@ function computeTeacherInfo(name){
        stat.count++;stat.size+=cls.size;subjects[cls.subject]=stat;
      });
    }
-  slots.forEach(sl=>{(sl.penaltyDetails||[]).forEach(p=>{if(p.name===name)pen+=p.amount;});});
+  slots.forEach(sl=>{
+    const cnt=sl.classes.filter(c=>(c.teachers||[]).includes(name)).length;
+    if(cnt>1)dup+=cnt-1;
+    (sl.penaltyDetails||[]).forEach(p=>{if(p.name===name)pen+=p.amount;});
+  });
   const allSlots=slots.map(s=>s.slotIndex);
   let allowed=new Set(allSlots);
   if(allow!==null){
@@ -2596,7 +2619,7 @@ function computeTeacherInfo(name){
   for(const k in subjects){subjects[k].avg=(subjects[k].size/subjects[k].count).toFixed(1);}
  const load=avail?hours*100/avail:0;
  const penVal=imp?pen/imp:0;
- return{arrive,imp,penalty:penVal,hours:hours,time:time,load:load,subjects};
+ return{arrive,imp,penalty:penVal,hours:hours,time:time,load:load,subjects,duplicates:dup};
 }
 
 function computeStudentInfo(name){
@@ -2605,7 +2628,7 @@ function computeStudentInfo(name){
  const defImp=(configData.defaults.studentImportance||[0])[0];
  const arrive=info.arriveEarly!==undefined?info.arriveEarly:defArr;
  const imp=info.importance!==undefined?info.importance:defImp;
- let hours=0,gap=0,time=0,subjects={},pen=0;
+ let hours=0,gap=0,time=0,subjects={},pen=0,dup=0;
  scheduleData.days.forEach(day=>{
    const slots=day.slots;
    const dayStart=slots.length?slots[0].slotIndex:0;
@@ -2622,7 +2645,10 @@ function computeStudentInfo(name){
        stat.count++;subjects[cls.subject]=stat;
      });
    }
-   slots.forEach(sl=>{(sl.penaltyDetails||[]).forEach(p=>{
+   slots.forEach(sl=>{
+    const cnt=sl.classes.filter(c=>c.students.includes(name)).length;
+    if(cnt>1)dup+=cnt-1;
+    (sl.penaltyDetails||[]).forEach(p=>{
     if(p.name===name){
       pen+=p.amount;
       if(p.type==='unoptimalSlot'){
@@ -2636,7 +2662,7 @@ function computeStudentInfo(name){
   });});
 });
 const penVal=imp?pen/imp:0;
-return{arrive,imp,penalty:penVal,hours:hours,time:time,subjects};
+return{arrive,imp,penalty:penVal,hours:hours,time:time,subjects,duplicates:dup};
 }
 
 function buildTeachers(){
@@ -2647,6 +2673,7 @@ function buildTeachers(){
   header.innerHTML='<span class="person-name">Teacher</span>'+
     '<span class="person-info sortable" data-sort="priority">Priority<br>Arrive</span>'+
     '<span class="person-pen sortable" data-sort="penalty">Penalty</span>'+
+    '<span class="person-dup sortable" data-sort="duplicates">Dup</span>'+
     '<span class="person-hours sortable" data-sort="hours">Hours</span>'+
     '<span class="person-time sortable" data-sort="time">At school</span>'+
     '<span class="person-load sortable" data-sort="load">Load %</span>'+
@@ -2667,6 +2694,7 @@ function buildTeachers(){
      case 'hours': av=a.stat.hours; bv=b.stat.hours; break;
      case 'time': av=a.stat.time; bv=b.stat.time; break;
      case 'load': av=a.stat.load; bv=b.stat.load; break;
+     case 'duplicates': av=a.stat.duplicates; bv=b.stat.duplicates; break;
      default: av=a.stat.penalty; bv=b.stat.penalty;
    }
    if(av<bv) return teacherSort.asc?-1:1;
@@ -2689,6 +2717,7 @@ function buildTeachers(){
   row.innerHTML='<span class="person-name clickable teacher" data-id="'+teacherIndex[item.info.name]+'">'+(teacherDisplay[item.info.name]||item.info.name)+'</span>'+
     '<span class="person-info">'+pr+'<br>'+arr+'</span>'+
     '<span class="person-pen">'+item.stat.penalty.toFixed(1)+'</span>'+
+    '<span class="person-dup">'+item.stat.duplicates+'</span>'+
     '<span class="person-hours">'+item.stat.hours+'</span>'+
     '<span class="person-time">'+item.stat.time+'</span>'+
     '<span class="person-load">'+item.stat.load.toFixed(1)+'</span>'+
@@ -2705,6 +2734,7 @@ function buildStudents(){
   header.innerHTML='<span class="person-name">Student</span>'+
     '<span class="person-info sortable" data-sort="priority">Priority<br>Arrive</span>'+
     '<span class="person-pen sortable" data-sort="penalty">Penalty</span>'+
+    '<span class="person-dup sortable" data-sort="duplicates">Dup</span>'+
     '<span class="person-hours sortable" data-sort="hours">Hours</span>'+
     '<span class="person-time sortable" data-sort="time">At school</span>'+
     '<span class="person-subjects">Subject<br>Cls | Pen</span>';
@@ -2717,14 +2747,15 @@ function buildStudents(){
     };
   });
   const infos=(configData.students||[]).map(s=>{return{info:s,stat:computeStudentInfo(s.name)}});
- infos.sort((a,b)=>{
-   let av,bv;
-   switch(studentSort.field){
-     case 'priority': av=a.stat.imp; bv=b.stat.imp; break;
-     case 'hours': av=a.stat.hours; bv=b.stat.hours; break;
-     case 'time': av=a.stat.time; bv=b.stat.time; break;
-     default: av=a.stat.penalty; bv=b.stat.penalty;
-   }
+infos.sort((a,b)=>{
+  let av,bv;
+  switch(studentSort.field){
+    case 'priority': av=a.stat.imp; bv=b.stat.imp; break;
+    case 'hours': av=a.stat.hours; bv=b.stat.hours; break;
+    case 'time': av=a.stat.time; bv=b.stat.time; break;
+    case 'duplicates': av=a.stat.duplicates; bv=b.stat.duplicates; break;
+    default: av=a.stat.penalty; bv=b.stat.penalty;
+  }
    if(av<bv) return studentSort.asc?-1:1;
    if(av>bv) return studentSort.asc?1:-1;
    return 0;
@@ -2742,12 +2773,13 @@ function buildStudents(){
        '<span class="subject-count">'+s.count+'</span>'+
        '<span class="subject-extra">'+(s.penalty||0).toFixed(1)+'</span></div>';
    });
-   row.innerHTML='<span class="person-name clickable student" data-id="'+studentIndex[item.info.name]+'">'+item.info.name+'</span>'+
-     '<span class="person-info">'+pr+'<br>'+arr+'</span>'+
-     '<span class="person-pen">'+item.stat.penalty.toFixed(1)+'</span>'+
-     '<span class="person-hours">'+item.stat.hours+'</span>'+
-     '<span class="person-time">'+item.stat.time+'</span>'+
-     '<span class="person-subjects"><div class="subject-list">'+subjHtml+'</div></span>';
+  row.innerHTML='<span class="person-name clickable student" data-id="'+studentIndex[item.info.name]+'">'+item.info.name+'</span>'+
+    '<span class="person-info">'+pr+'<br>'+arr+'</span>'+
+    '<span class="person-pen">'+item.stat.penalty.toFixed(1)+'</span>'+
+    '<span class="person-dup">'+item.stat.duplicates+'</span>'+
+    '<span class="person-hours">'+item.stat.hours+'</span>'+
+    '<span class="person-time">'+item.stat.time+'</span>'+
+    '<span class="person-subjects"><div class="subject-list">'+subjHtml+'</div></span>';
    cont.appendChild(row);
   });
 }
@@ -2778,8 +2810,9 @@ function showTeacher(idx,fromModal=false){
   ['Load %',full.load.toFixed(1)],
   ['Total classes',stats.totalClasses],
   ['Average size',stats.avgSize],
+  ['Duplicates',full.duplicates],
   ['Penalty',full.penalty.toFixed(1)]
- ];
+];
  html+='<h3>Configuration</h3>'+makeParamTable(params);
  openModal(html,!fromModal);
 }
@@ -2806,8 +2839,9 @@ Object.keys(full.subjects).forEach(sid=>{const s=full.subjects[sid];const sn=sub
  ['Arrive early',full.arrive?'yes':'no',boldArr],
  ['Gap hours',stats.gap],
  ['At school',stats.time],
+ ['Duplicates',full.duplicates],
  ['Penalty',full.penalty.toFixed(1)]
- ];
+];
  html+='<h3>Configuration</h3>'+makeParamTable(params);
  openModal(html,!fromModal);
 }

@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Tuple
 import json
+import re
 
 
 @dataclass
@@ -20,7 +21,9 @@ class PreprocessedData:
 def load_config(path: str = "schedule-config.json") -> Dict[str, Any]:
     """Load raw configuration from a JSON file."""
     with open(path, "r", encoding="utf-8") as fh:
-        return json.load(fh)
+        text = fh.read()
+    text = re.sub(r"//.*?$|#.*?$|/\*.*?\*/", "", text, flags=re.MULTILINE | re.DOTALL)
+    return json.loads(text)
 
 
 def filter_domains(cfg: Dict[str, Any]) -> None:

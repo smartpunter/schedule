@@ -729,10 +729,11 @@ def _prepare_fixed_classes(
             for t in tlist:
                 if t not in teacher_map or sid not in teacher_map[t]:
                     raise ValueError(f"Teacher {t} cannot teach subject {sid}")
-                if slot not in teacher_limits[t][day]:
-                    raise ValueError(
-                        f"Teacher {t} not available at {day} slot {slot} for subject {sid}"
-                    )
+                for off in range(length):
+                    if slot + off not in teacher_limits[t][day]:
+                        raise ValueError(
+                            f"Teacher {t} not available for entire duration starting at {day} slot {slot} for subject {sid}"
+                        )
             available_teachers = tlist
         else:
             available_teachers = [
@@ -747,10 +748,11 @@ def _prepare_fixed_classes(
                 )
 
         for stu in students_by_subject.get(sid, []):
-            if slot not in student_limits[stu][day]:
-                raise ValueError(
-                    f"Student {stu} not available at {day} slot {slot} for subject {sid}"
-                )
+            for off in range(length):
+                if slot + off not in student_limits[stu][day]:
+                    raise ValueError(
+                        f"Student {stu} not available for entire duration starting at {day} slot {slot} for subject {sid}"
+                    )
 
         primary = set(subj.get("primaryTeachers", []))
         if explicit_teachers and primary and not primary.issubset(set(tlist)):

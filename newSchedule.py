@@ -415,14 +415,8 @@ def _prepare_fixed_classes(
     return fixed
 
 
-def build_model(
-    cfg: Dict[str, Any], feasibility_only: bool = False
-) -> Dict[str, Dict[int, List[Dict[str, Any]]]]:
-    """Build schedule using CP-SAT optimisation.
-
-    When ``feasibility_only`` is True the penalties are ignored and the
-    solver searches for any schedule that satisfies hard constraints.
-    """
+def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]]]:
+    """Build schedule using CP-SAT optimisation."""
     days = cfg["days"]
     subjects = cfg["subjects"]
     teachers = cfg.get("teachers", [])
@@ -725,12 +719,6 @@ def build_model(
             candidate_counts[key] = len(cand_list)
 
     obj_mode = settings.get("objective", ["total"])[0]
-    if obj_mode == "check":
-        worst = sorted(candidate_counts.items(), key=lambda it: it[1], reverse=True)[:5]
-        if worst:
-            print("Largest candidate sets:")
-            for key, count in worst:
-                print(f"{key}: {count} options")
 
     # at most one class of same subject per day
     for sid, subj in subjects.items():
@@ -1057,12 +1045,7 @@ def build_model(
                 )
         teacher_consec_exprs[t] = sum(expr) if expr else 0
 
-    consecutive_expr = sum(teacher_consec_exprs.values()) if consecutive_vars else 0
-
-    if feasibility_only:
-        model.Minimize(0)
-    elif obj_mode == "total":
-        total_expr = (
+    total_expr = (
             sum(teacher_gap_exprs.values())
             + sum(teacher_unopt_exprs.values())
             + sum(teacher_consec_exprs.values())
@@ -1071,45 +1054,7 @@ def build_model(
             + sum(student_unopt_exprs.values())
             + sum(student_streak_exprs.values())
         )
-        model.Minimize(total_expr)
-    else:
-        approx_bound = (
-            sum(c["penalty"] for cl in candidates.values() for c in cl)
-            + len(teacher_gap_vars)
-            * gap_teacher_val
-            * max(teacher_importance.values() or [0])
-            + len(student_gap_vars)
-            * gap_student_val
-            * max(student_importance.values() or [0])
-            * max(student_size.values() or [1])
-            + len(consecutive_vars)
-            * consecutive_pen_val
-            * teacher_as_students
-            * max(teacher_importance.values() or [0])
-            + len(teacher_slot)
-            * (max(teacher_streak_list or [0]))
-            * teacher_as_students
-            * max(teacher_importance.values() or [0])
-            + len(student_slot)
-            * (max(student_streak_list or [0]))
-            * max(student_importance.values() or [0])
-            * max(student_size.values() or [1])
-        )
-        max_pen = model.NewIntVar(0, int(approx_bound + 1), "maxPenalty")
-        for t in teacher_importance:
-            model.Add(
-                teacher_gap_exprs[t]
-                + teacher_unopt_exprs[t]
-                + teacher_consec_exprs[t]
-                + teacher_streak_exprs[t]
-                <= max_pen
-            )
-        for s in student_importance:
-            model.Add(
-                student_gap_exprs[s] + student_unopt_exprs[s] + student_streak_exprs[s]
-                <= max_pen
-            )
-        model.Minimize(max_pen)
+    model.Minimize(total_expr)
 
     solver = cp_model.CpSolver()
 
@@ -1126,11 +1071,6 @@ def build_model(
     solver.parameters.max_time_in_seconds = max_time
     solver.parameters.num_search_workers = workers
     solver.parameters.log_search_progress = show_progress
-    if feasibility_only:
-        solver.parameters.log_search_progress = True
-        solver.parameters.search_branching = (
-            cp_model.PORTFOLIO_WITH_QUICK_RESTART_SEARCH
-        )
 
     status = solver.Solve(model)
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
@@ -2603,17 +2543,6 @@ def diagnose_config(cfg: Dict[str, Any]) -> None:
         print("No obvious issues detected.")
 
 
-def check_feasibility(cfg: Dict[str, Any]) -> bool:
-    """Return True if a feasible schedule exists."""
-    cfg_copy = copy.deepcopy(cfg)
-
-    try:
-        build_model(cfg_copy, feasibility_only=True)
-    except RuntimeError:
-        return False
-    return True
-
-
 def main() -> None:
     args = [a for a in sys.argv[1:] if a != "-y"]
     auto_yes = "-y" in sys.argv[1:]
@@ -2634,7 +2563,7 @@ def main() -> None:
 
     obj_mode = cfg.get("settings", {}).get("objective", ["total"])[0]
     skip_solve = False
-    if obj_mode != "check" and os.path.exists(out_path):
+    if os.path.exists(out_path):
         if auto_yes:
             skip_solve = True
         else:
@@ -2654,17 +2583,6 @@ def main() -> None:
                 print("Exiting due to duplicates.")
                 return
 
-    if obj_mode == "check":
-        diagnose_config(cfg)
-        feasible = check_feasibility(cfg)
-        if feasible:
-            print(
-                "A feasible schedule exists. THIS IS NOT OPTIMAL. "
-                "Set objective to 'total' or 'fair' for optimisation."
-            )
-        else:
-            print("No feasible schedule found.")
-        return
 
     fresh = not skip_solve
     if skip_solve:

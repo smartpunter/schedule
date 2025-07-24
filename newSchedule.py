@@ -530,6 +530,8 @@ def build_model(
 
     # candidate variables for each subject class (day/start only)
     candidates: Dict[tuple, List[Dict[str, Any]]] = {}
+    # store number of generated candidates for every class
+    candidate_counts: Dict[tuple, int] = {}
     # chosen day index for each class
     class_day_idx: Dict[tuple, cp_model.IntVar] = {}
     avoid_map = {
@@ -719,6 +721,16 @@ def build_model(
                     f"int_{sid}_{idx}_{cand['day']}_{cand['start']}",
                 )
             candidates[key] = cand_list
+            # store how many placement options exist for this class
+            candidate_counts[key] = len(cand_list)
+
+    obj_mode = settings.get("objective", ["total"])[0]
+    if obj_mode == "check":
+        worst = sorted(candidate_counts.items(), key=lambda it: it[1], reverse=True)[:5]
+        if worst:
+            print("Largest candidate sets:")
+            for key, count in worst:
+                print(f"{key}: {count} options")
 
     # at most one class of same subject per day
     for sid, subj in subjects.items():

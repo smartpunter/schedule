@@ -46,14 +46,12 @@ Inside the project folder make a copy of `config-example.json` and name it `sche
 2. Right click the file and choose **Duplicate** if you want an extra backup.
 3. Edit the file with **TextEdit** or the free [Sublime Text](https://www.sublimetext.com/).
 4. Save the file with **⌘S**.
-5. You can include comments in the JSON using `//`, `#` or `/* */`; they will be ignored when the program loads the file.
 
 **Editing on Windows**
 1. Use File Explorer to open the project folder.
 2. Right click `schedule-config.json` and choose **Copy**, then **Paste** to keep a spare copy.
 3. Edit the file with **Notepad**, [Notepad++](https://notepad-plus-plus.org/) or [Sublime Text](https://www.sublimetext.com/).
 4. Use **File → Save** when done.
-5. Comments starting with `//`, `#` or enclosed in `/* */` are allowed and ignored during loading.
 
 ### 5. Run the scheduler
 
@@ -89,7 +87,6 @@ Press **Ctrl+C** to stop early; the best solution so far will be saved. The sear
 ## Configuration overview
 
 The configuration file is divided into several sections. Values are stored as `[value, "description"]` pairs. The **settings**, **defaults** and **penalties** blocks are required. The **model** block is optional and should only be changed if you understand the effects.
-You may add comments using `//`, `#` or `/* */`; they are stripped when the file is read.
 
 ### settings (required)
 - **objective** – `"total"` minimises the sum of all penalties; `"fair"` balances penalties between teachers and students; `"check"` only tests if any schedule is possible. *(default `"total"`)*

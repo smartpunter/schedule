@@ -1,0 +1,252 @@
+{
+  "settings": {
+    "teacherAsStudents": [15, "How many student opinions equal one teacher when calculating penalties."],
+    "objective": ["total", "Optimisation objective: 'total' or 'fair'"]
+  },
+  "defaults": {
+    "teacherImportance": [10, "Teacher importance"],
+    "studentImportance": [10, "Student importance"],
+    "optimalSlot": [0, "Optimal slot for subjects with unspecified optimal slot. 0 means first lesson of the day"],
+    "teacherArriveEarly": [false, "Whether a teacher should appear early on morning"],
+    "studentArriveEarly": [true, "Whether a student should appear early on morning"],
+    "permutations": [true, "Allow permutations of subject classes by default"],
+    "avoidConsecutive": [true, "Avoid scheduling subject on consecutive days"]
+  },
+  "penalties": {
+    "gapTeacher": [25, "Penalty for having gap in teacher schedule"],
+    "gapStudent": [100, "Penalty for having gap in student schedule"],
+    "unoptimalSlot": [5, "Penalty for not having subject at optimal slot."],
+    "teacherLessonStreak": [[0,0,0,50,200,500,1000,2000], "Penalty depending on how many lessons in a row a teacher has."],
+    "studentLessonStreak": [[0,0,0,0,0,25,250,2500], "Penalty depending on consecutive lessons for a student."],
+    "consecutiveClass": [50, "Penalty for subject occurring on consecutive days"]
+  },
+
+  "days": [
+    { "name": "Monday", "slots": [ 0, 1, 2, 3, 4, 5, 6, 7 ] },
+    { "name": "Tuesday", "slots": [ 0, 1, 2, 3, 4, 5, 6, 7 ] },
+    { "name": "Wednesday", "slots": [ 0, 1, 2, 3, 4, 5, 6, 7 ] },
+    { "name": "Thursday", "slots": [ 0, 1, 2, 3, 4, 5, 6, 7 ] },
+    { "name": "Friday", "slots": [ 0, 1, 2, 3, 4, 5, 6, 7 ] }
+  ],
+  "cabinets": {
+    "K2 - Physics": { "capacity": 12 },
+    "P1 - Y11 Home": { "capacity": 21 },
+    "#11 - Y10 Home": { "capacity": 21 },
+    "#12 - pY10 Home": { "capacity": 16 },
+    "#21 - Y12 Home": { "capacity": 21 },
+    "#22 - Y13 Home": { "capacity": 21 },
+    "#23 - Language": { "capacity": 5 },
+    "K5 - Biology": { "capacity": 16 },
+    "K1 - Reserve": { "capacity": 12 },
+    "K3 - Reserve": { "capacity": 8 },
+    "K4 - Reserve": { "capacity": 50 },
+    "Gym": { "capacity": 50, "allowedSubjects": ["Combined_PE"] },
+    "Chemistry Lab": { "capacity": 50, "allowedSubjects": ["Y12_Chemistry_Lab", "Y13_Chemistry_Lab"] }
+  },
+
+  "teachers": {
+  	"Ana": { 
+      "allowedSlots": { "Monday": [], "Tuesday": [], "Thursday": [] },
+      "forbiddenSlots": { "Monday": [0], "Tuesday": [0], "Thursday": [0] }
+    },
+  	"Andrej": { 
+      "forbiddenSlots": { "Monday": [0, 1], "Tuesday": [0, 1], "Wednesday": [0, 1], "Thursday": [0, 1], "Friday": [0, 1] }
+    },
+    "Angie": { 
+      "importance": 15
+    },
+    "Connor": { 
+      "importance": 15
+    },
+    "David": { },
+    "Derek": {
+    	"importance": 8
+    },
+    "Domen": { 
+    	"arriveEarly": true, "importance": 11,
+    	"allowedSlots": { "Monday": [], "Wednesday": [], "Thursday": [] },
+      "forbiddenSlots": { "Monday": [0, 1], "Wednesday": [0, 1], "Thursday": [0, 1]}
+    },
+    "Jasminka": { 
+      "importance": 15
+    },
+    "Klemen": { 
+      "importance": 14
+    },
+    "Kristina": { 
+      "importance": 16
+    },
+    "Mathieu": { },
+    "Nick": { 
+    	"importance": 18
+    },
+    "Polona": { 
+    	"importance": 15
+    },
+    "Sara": { },
+    "Saša": { },
+    "Tamara": {
+    	"importance": 15
+    },
+    "Chemistry Lab Owner": {
+      "allowedSlots": { "Wednesday": [6, 7], "Friday": [6, 7] }
+    },
+    "Gym Owner": {
+      "allowedSlots": { "Monday": [2], "Thursday": [2], "Friday": [2] }
+    }
+  },
+
+  "subjects": {
+
+    "Combined_Mathematics": { "teachers": ["Polona", "Nick"], "requiredTeachers": 2, "optimalSlot": 0, "classes": [1, 1, 1, 1], "cabinets": ["#11 - Y10 Home", "#12 - pY10 Home"], "requiredCabinets": 2 },
+		"Combined_Languages": { "teachers": ["Angie", "Andrej", "Mathieu"], "requiredTeachers": 3, "optimalSlot": 3, "classes": [1, 1, 1], "cabinets": ["#12 - pY10 Home", "#11 - Y10 Home", "#23 - Language", "K3 - Reserve", "K4 - Reserve"], "requiredCabinets": 3 },
+    "Combined_PE": { "teachers": ["Gym Owner", "Sara", "Nick", "Kristina"], "primaryTeachers": ["Gym Owner"], "requiredTeachers": 2, "classes": [1, 1, 1], "cabinets": ["Gym"] },
+    
+		"pY10_English_Language": { "teachers": ["Tamara"], "optimalSlot": 1, "classes": [1, 1], "cabinets": ["#12 - pY10 Home"] },
+    "pY10_English_Literature": { "teachers": ["Connor"], "optimalSlot": 1, "classes": [1, 1, 1], "cabinets": ["#12 - pY10 Home"] },
+    "pY10_History": { "teachers": ["Derek"], "optimalSlot": 2, "classes": [1, 1, 1], "cabinets": ["#12 - pY10 Home"] },
+    "pY10_Geography": { "teachers": ["Ana"], "optimalSlot": 4, "classes": [1, 1], "cabinets": ["#12 - pY10 Home"] },
+    "pY10_Biology": { "teachers": ["Klemen"], "optimalSlot": 3, "classes": [1, 1, 1], "cabinets": ["K5 - Biology"] },
+    "pY10_Chemistry": { "teachers": ["Jasminka"], "optimalSlot": 3, "classes": [1, 1, 1], "cabinets": ["#12 - pY10 Home", "K2 - Physics", "K5 - Biology"] },
+    "pY10_Physics": { "teachers": ["Kristina"], "optimalSlot": 1, "classes": [1, 1, 1], "cabinets": ["#12 - pY10 Home", "K2 - Physics"] },
+    
+    "Y10_English_Language": { "teachers": ["Tamara"], "optimalSlot": 1, "classes": [1, 1], "cabinets": ["#11 - Y10 Home"] },
+    "Y10_English_Literature": { "teachers": ["Connor"], "optimalSlot": 2, "classes": [1, 1, 1], "cabinets": ["#11 - Y10 Home"] },
+    "Y10_History": { "teachers": ["Derek"], "optimalSlot": 2, "classes": [1, 1, 1], "cabinets": ["#11 - Y10 Home"] },
+    "Y10_Geography": { "teachers": ["Ana"], "optimalSlot": 4, "classes": [1, 1], "cabinets": ["#11 - Y10 Home"] },
+    "Y10_Biology": { "teachers": ["Klemen"], "optimalSlot": 3, "classes": [1, 1, 1], "cabinets": ["K5 - Biology"] },
+    "Y10_Chemistry": { "teachers": ["Jasminka"], "optimalSlot": 3, "classes": [1, 1, 1], "cabinets": ["#11 - Y10 Home", "K2 - Physics", "K5 - Biology"] },
+    "Y10_Physics": { "teachers": ["Kristina"], "optimalSlot": 1, "classes": [1, 1, 1], "cabinets": ["#11 - Y10 Home", "K2 - Physics"] },
+    
+    "Y11_Language": { "teachers": ["Angie", "Mathieu"], "requiredTeachers": 2, "optimalSlot": 4, "classes": [1, 1, 1], "cabinets": ["P1 - Y11 Home", "#23 - Language"], "requiredCabinets": 2 },
+    "Y11_Mathematics": { "teachers": ["Saša"], "optimalSlot": 0, "classes": [1, 1, 1, 1], "cabinets": ["P1 - Y11 Home"] },
+    "Y11_English_Language": { "teachers": ["Tamara"], "optimalSlot": 1, "classes": [1, 1], "cabinets": ["P1 - Y11 Home"] },
+    "Y11_English_Literature": { "teachers": ["Connor"], "optimalSlot": 2, "classes": [1, 1, 1], "cabinets": ["P1 - Y11 Home"] },
+    "Y11_History": { "teachers": ["Derek", "David"], "requiredTeachers": 2, "optimalSlot": 2, "classes": [1, 1, 1], "cabinets": ["P1 - Y11 Home"]},
+    "Y11_Geography": { "teachers": ["Ana"], "optimalSlot": 4, "classes": [1, 1, 1], "cabinets": ["P1 - Y11 Home"] },
+    "Y11_Biology": { "teachers": ["Klemen"], "optimalSlot": 3, "classes": [1, 1, 1], "cabinets": ["K5 - Biology"] },
+    "Y11_Chemistry": { "teachers": ["Jasminka"], "optimalSlot": 3, "classes": [1, 1, 1], "cabinets": ["P1 - Y11 Home", "K2 - Physics", "K5 - Biology"] },
+    "Y11_Physics": { "teachers": ["Kristina"], "optimalSlot": 1, "classes": [1, 1, 1], "cabinets": ["P1 - Y11 Home", "K2 - Physics"] },
+    
+
+    "Y12_English_Literature_SL": { "teachers": ["Tamara"], "optimalSlot": 2, "classes": [2, 1] },
+    "Y12_English_Literature_HL": { "teachers": ["Tamara"], "optimalSlot": 2, "classes": [2, 2, 1] },
+    "Y12_SSST": { "teachers": ["Tamara"], "optimalSlot": 2, "classes": [1] },
+    "Y12_English_B_SL": { "teachers": ["Tamara"], "optimalSlot": 2, "classes": [2,1] },
+    "Y12_English_B_HL": { "teachers": ["Tamara"], "optimalSlot": 2, "classes": [2] },
+    "Y12_German_ab_initio": { "teachers": ["Angie"], "optimalSlot": 4, "classes": [2, 1] },
+    "Y12_German_B_SL": { "teachers": ["Angie"], "optimalSlot": 4, "classes": [2, 1] },
+    "Y12_German_B_HL": { "teachers": ["Angie"], "optimalSlot": 4, "classes": [1] },
+    "Y12_French_ab_initio": { "teachers": ["Mathieu"], "optimalSlot": 4, "classes": [2, 1] },
+    "Y12_French_B": { "teachers": ["Mathieu"], "optimalSlot": 4, "classes": [2, 1] },
+    "Y12_Psychology_HL": { "teachers": ["Sara"], "optimalSlot": 3, "classes": [2, 2, 1] },
+    "Y12_Business_HL": { "teachers": ["Domen"], "optimalSlot": 2, "classes": [2, 2, 1] },
+    "Y12_History_SL": { "teachers": ["Derek"], "optimalSlot": 3, "classes": [2, 1] },
+    "Y12_History_HL": { "teachers": ["Derek"], "optimalSlot": 3, "classes": [2] },
+    "Y12_ESS_SL": { "teachers": ["Klemen"], "optimalSlot": 3, "classes": [2, 1], "cabinets": ["K5 - Biology"]  },
+    "Y12_Biology_SL": { "teachers": ["Klemen"], "optimalSlot": 3, "classes": [2, 1], "cabinets": ["K5 - Biology"] },
+    "Y12_Biology_HL": { "teachers": ["Klemen"], "optimalSlot": 3, "classes": [2], "cabinets": ["K5 - Biology"] },
+    "Y12_Physics_HL": { "teachers": ["Kristina"], "optimalSlot": 1, "classes": [2, 2, 1], "cabinets": ["K2 - Physics"] },
+    "Y12_Chemistry_HL": { "teachers": ["Jasminka"], "optimalSlot": 2, "classes": [2, 1] },
+    "Y12_Chemistry_Lab": { "teachers": ["Jasminka", "Chemistry Lab Owner"], "requiredTeachers": 2, "optimalSlot": 7, "classes": [2] },
+    "Y12_MathAA_HL": { "teachers": ["Saša"], "optimalSlot": 1, "classes": [2, 2, 1] },
+    "Y12_MathAA_SL": { "teachers": ["Saša"], "optimalSlot": 1, "classes": [2, 1, 1] },
+    "Y12_MathAI_SL": { "teachers": ["Saša"], "optimalSlot": 1, "classes": [2, 1, 1] },
+    "Y12_TOK": { "teachers": ["Connor"], "optimalSlot": 2, "classes": [1, 1], "cabinets": ["#21 - Y12 Home"] },
+    "Y12_EE/CAS": { "teachers": ["Jasminka", "Domen"], "optimalSlot": 4, "classes": [1], "cabinets": ["#21 - Y12 Home"] },
+
+    "Y13_English_Literature_HL": { "teachers": ["Connor"], "optimalSlot": 2, "classes": [2, 2, 1] },
+    "Y13_English_Literature_SL": { "teachers": ["Connor"], "optimalSlot": 2, "classes": [2, 1] },
+    "Y13_SSST": { "teachers": ["Tamara"], "optimalSlot": 2, "classes": [1] },
+    "Y13_English_B_SL": { "teachers": ["Tamara"], "optimalSlot": 2, "classes": [2,1] },
+    "Y13_English_B_HL": { "teachers": ["Tamara"], "optimalSlot": 2, "classes": [2] },
+    "Y13_German_ab_initio": { "teachers": ["Angie"], "optimalSlot": 4, "classes": [2, 1] },
+    "Y13_German_B_SL": { "teachers": ["Angie"], "optimalSlot": 4, "classes": [2, 1] },
+    "Y13_German_B_HL": { "teachers": ["Angie"], "optimalSlot": 4, "classes": [2] },
+    "Y13_French_ab_initio": { "teachers": ["Mathieu"], "optimalSlot": 4, "classes": [2, 1] },
+    "Y13_French_B": { "teachers": ["Mathieu"], "optimalSlot": 4, "classes": [2, 1] },
+    "Y13_Psychology_HL": { "teachers": ["Sara"], "optimalSlot": 3, "classes": [2, 2, 1] },
+    "Y13_Business_HL": { "teachers": ["Domen"], "optimalSlot": 2, "classes": [2, 2, 1] },
+    "Y13_History_SL": { "teachers": ["Derek"], "optimalSlot": 3, "classes": [2, 1] },
+    "Y13_History_HL": { "teachers": ["David"], "optimalSlot": 3, "classes": [2] },
+    "Y13_ESS_SL": { "teachers": ["Klemen"], "optimalSlot": 3, "classes": [2, 1], "cabinets": ["K5 - Biology"]  },
+    "Y13_Biology_SL": { "teachers": ["Klemen"], "optimalSlot": 3, "classes": [2, 1], "cabinets": ["K5 - Biology"] },
+    "Y13_Biology_HL": { "teachers": ["Klemen"], "optimalSlot": 3, "classes": [2], "cabinets": ["K5 - Biology"] },
+    "Y13_Physics_HL": { "teachers": ["Kristina"], "optimalSlot": 1, "classes": [2, 2, 1], "cabinets": ["K2 - Physics"] },
+    "Y13_Chemistry_HL": { "teachers": ["Jasminka"], "optimalSlot": 2, "classes": [2, 1] },
+    "Y13_Chemistry_Lab": { "teachers": ["Jasminka", "Chemistry Lab Owner"], "requiredTeachers": 2, "optimalSlot": 7, "classes": [2] },
+    "Y13_MathAA_HL": { "teachers": ["Nick"], "optimalSlot": 1, "classes": [2, 2, 1], "cabinets": ["#22 - Y13 Home"] },
+    "Y13_MathAA_SL": { "teachers": ["Nick"], "optimalSlot": 1, "classes": [2, 1, 1], "cabinets": ["#22 - Y13 Home"] },
+    "Y13_MathAI_SL": { "teachers": ["Nick"], "optimalSlot": 1, "classes": [2, 1, 1], "cabinets": ["#22 - Y13 Home"] },
+    "Y13_TOK": { "teachers": ["Connor"], "optimalSlot": 2, "classes": [1, 1], "cabinets": ["#22 - Y13 Home"] },
+    "Y13_EE/CAS": { "teachers": ["Jasminka", "Domen"], "optimalSlot": 4, "classes": [1], "cabinets": ["#22 - Y13 Home"] },
+    
+    "Staff_English": { "teachers": [ "Connor", "Tamara", "David" ], "requiredTeachers": 3, "optimalSlot": 7, "classes": [ 1 ] },
+    "Staff_Languages": { "teachers": [ "Mathieu", "Tamara", "Angie", "Ana" ], "requiredTeachers": 4, "optimalSlot": 7, "classes": [ 1 ] },
+    "Staff_Humanities": { "teachers": [ "David", "Domen", "Derek", "Sara" ], "requiredTeachers": 4,  "optimalSlot": 7, "classes": [ 1 ] },
+    "Staff_Sciences": { "teachers": [ "Jasminka", "Kristina", "Klemen" ], "requiredTeachers": 3, "optimalSlot": 7, "classes": [ 1 ] },
+    "Staff_All": { "teachers": [ "Ana", "Angie", "Connor", "David", "Derek", "Domen", "Jasminka", "Klemen", "Kristina", "Mathieu", "Nick", "Polona", "Saša", "Sara","Tamara" ], "requiredTeachers": 15, "optimalSlot": 7, "classes": [ 1 ] }
+  },
+  
+  "students": [
+    { "importance": 0, "name": "Staff_English_Meetings", "subjects": [ "Staff_All", "Staff_English" ] },
+    { "importance": 0, "name": "Staff_Languages_Meetings", "subjects": [ "Staff_All", "Staff_Languages" ] },
+    { "importance": 0, "name": "Staff_Humanities_Meetings", "subjects": [ "Staff_All", "Staff_Humanities" ] },
+    { "importance": 0, "name": "Staff_Sciences_Meetings", "subjects": [ "Staff_All", "Staff_Sciences" ] },
+
+    { "importance": 25, "group": 6, "name": "pY10_Students", "subjects": [ "Combined_Mathematics", "Combined_Languages", "Combined_PE", "pY10_English_Language", "pY10_English_Literature", "pY10_History", "pY10_Geography", "pY10_Biology", "pY10_Chemistry", "pY10_Physics" ] },
+    
+    { "importance": 20, "group": 13, "name": "Y10_Students", "subjects": [ "Combined_Mathematics", "Combined_Languages", "Combined_PE", "Y10_English_Language", "Y10_English_Literature", "Y10_History", "Y10_Geography", "Y10_Biology", "Y10_Chemistry", "Y10_Physics" ] },
+
+    { "importance": 15, "group": 11, "name": "Y11_Students", "subjects": [ "Combined_PE", "Y11_Language", "Y11_Mathematics", "Y11_English_Language", "Y11_English_Literature",  "Y11_History", "Y11_Geography", "Y11_Biology", "Y11_Chemistry", "Y11_Physics" ] },
+
+    { "name": "Aleksander", "subjects": [ "Y12_English_Literature_SL", "Y12_German_ab_initio", "Y12_Business_HL", "Y12_Physics_HL", "Y12_Chemistry_HL", "Y12_Chemistry_Lab", "Y12_MathAA_HL", "Y12_TOK", "Y12_EE/CAS" ] },
+    { "name": "Domen+Mikhail", "group": 2, "subjects": [ "Y12_English_Literature_SL", "Y12_German_ab_initio", "Y12_Business_HL", "Y12_History_SL", "Y12_Physics_HL", "Y12_MathAA_HL", "Y12_TOK", "Y12_EE/CAS" ] },
+    { "name": "Elizabeth", "subjects": [ "Y12_English_Literature_HL", "Y12_French_B", "Y12_Psychology_HL", "Y12_History_SL", "Y12_History_HL", "Y12_ESS_SL", "Y12_MathAA_SL", "Y12_TOK", "Y12_EE/CAS" ] },
+    { "name": "Emma", "subjects": [ "Y12_English_Literature_HL", "Y12_French_B", "Y12_Psychology_HL", "Y12_History_SL", "Y12_History_HL", "Y12_ESS_SL", "Y12_MathAI_SL", "Y12_TOK", "Y12_EE/CAS" ] },
+    { "name": "Gregory", "subjects": [ "Y12_English_Literature_SL", "Y12_French_B", "Y12_Business_HL", "Y12_ESS_SL", "Y12_Physics_HL", "Y12_MathAA_HL", "Y12_TOK", "Y12_EE/CAS" ] },
+    { "name": "Killian", "subjects": [ "Y12_English_Literature_SL", "Y12_French_ab_initio", "Y12_Psychology_HL", "Y12_Chemistry_HL", "Y12_Chemistry_Lab", "Y12_MathAA_HL", "Y12_Physics_HL", "Y12_TOK", "Y12_EE/CAS" ] },
+    { "name": "Kseniia", "subjects": [ "Y12_English_Literature_HL", "Y12_French_B", "Y12_Business_HL", "Y12_History_SL", "Y12_History_HL", "Y12_ESS_SL", "Y12_MathAA_SL", "Y12_TOK", "Y12_EE/CAS" ] },
+    { "name": "Larisa", "subjects": [ "Y12_English_Literature_HL", "Y12_German_B_SL", "Y12_Psychology_HL", "Y12_Biology_SL", "Y12_Chemistry_HL", "Y12_Chemistry_Lab", "Y12_MathAA_SL", "Y12_TOK", "Y12_EE/CAS" ] },
+    { "name": "Luka K", "subjects": [ "Y12_English_Literature_HL", "Y12_French_B", "Y12_Business_HL", "Y12_History_SL", "Y12_History_HL", "Y12_ESS_SL", "Y12_MathAI_SL", "Y12_TOK", "Y12_EE/CAS" ] },
+    // { "name": "Mikhail", "subjects": [ "Y12_English_Literature_SL", "Y12_German_ab_initio", "Y12_Business_HL", "Y12_History_SL", "Y12_Physics_HL", "Y12_MathAA_HL", "Y12_TOK", "Y12_EE/CAS" ] },
+    { "name": "Mikhei", "subjects": [ "Y12_SSST", "Y12_English_B_SL", "Y12_Business_HL", "Y12_Chemistry_HL", "Y12_Chemistry_Lab", "Y12_Physics_HL", "Y12_MathAA_HL", "Y12_TOK", "Y12_EE/CAS" ] },
+    { "name": "Nik Sol", "subjects": [ "Y12_English_Literature_HL", "Y12_German_ab_initio", "Y12_Psychology_HL", "Y12_Business_HL", "Y12_ESS_SL", "Y12_MathAA_SL", "Y12_TOK", "Y12_EE/CAS" ] },
+    { "name": "Rem", "subjects": [ "Y12_English_Literature_HL", "Y12_German_ab_initio", "Y12_Business_HL", "Y12_History_SL", "Y12_History_HL", "Y12_ESS_SL", "Y12_MathAI_SL", "Y12_TOK", "Y12_EE/CAS" ] },
+    { "name": "Teodora", "subjects": [ "Y12_English_Literature_HL", "Y12_French_ab_initio", "Y12_Psychology_HL", "Y12_Business_HL", "Y12_ESS_SL", "Y12_MathAI_SL", "Y12_TOK", "Y12_EE/CAS" ] },
+    { "name": "Yinquan", "subjects": [ "Y12_SSST", "Y12_English_B_SL", "Y12_English_B_HL", "Y12_History_SL", "Y12_Biology_SL", "Y12_Biology_HL", "Y12_Chemistry_HL", "Y12_Chemistry_Lab", "Y12_MathAA_SL", "Y12_TOK", "Y12_EE/CAS" ] },
+    { "name": "Yusuf", "subjects": [ "Y12_English_Literature_HL", "Y12_German_B_SL", "Y12_German_B_HL", "Y12_Business_HL", "Y12_History_SL", "Y12_History_HL", "Y12_Physics_HL", "Y12_MathAA_SL", "Y12_TOK", "Y12_EE/CAS" ] },
+
+    { "name": "Anna", "subjects": [ "Y13_SSST", "Y13_English_B_SL", "Y13_German_B_SL", "Y13_German_B_HL", "Y13_Business_HL", "Y13_Physics_HL", "Y13_MathAA_HL", "Y13_TOK", "Y13_EE/CAS" ] },
+    { "importance": 12, "name": "Daniil", "subjects": [ "Y13_English_Literature_SL", "Y13_German_ab_initio", "Y13_Psychology_HL", "Y13_History_SL", "Y13_History_HL", "Y13_Physics_HL", "Y13_MathAA_HL", "Y13_TOK", "Y13_EE/CAS" ] },
+    { "name": "Daria", "subjects": [ "Y13_English_Literature_HL", "Y13_German_B_SL", "Y13_Psychology_HL", "Y13_Business_HL", "Y13_Biology_SL", "Y13_MathAA_SL", "Y13_TOK", "Y13_EE/CAS" ] },
+    { "name": "Ekaterina", "subjects": [ "Y13_SSST", "Y13_English_Literature_HL", "Y13_English_B_SL", "Y13_Business_HL", "Y13_Psychology_HL", "Y13_Physics_HL", "Y13_MathAA_HL", "Y13_TOK", "Y13_EE/CAS" ] },
+    { "name": "Eva", "subjects": [ "Y13_English_Literature_HL", "Y13_French_B", "Y13_ESS_SL", "Y13_Biology_SL", "Y13_Biology_HL", "Y13_Chemistry_HL", "Y13_Chemistry_Lab", "Y13_MathAA_SL", "Y13_TOK", "Y13_EE/CAS" ] },
+    { "name": "Giulietta", "subjects": [ "Y13_English_Literature_HL", "Y13_French_ab_initio", "Y13_Psychology_HL", "Y13_History_SL", "Y13_Biology_SL", "Y13_Biology_HL", "Y13_MathAI_SL", "Y13_TOK", "Y13_EE/CAS" ] },
+    { "name": "Jon", "subjects": [ "Y13_English_Literature_SL", "Y13_French_ab_initio", "Y13_Psychology_HL", "Y13_History_SL", "Y13_Physics_HL", "Y13_MathAA_HL", "Y13_TOK", "Y13_EE/CAS" ] },
+    { "name": "Julija", "subjects": [ "Y13_English_Literature_HL", "Y13_German_ab_initio", "Y13_Psychology_HL", "Y13_History_SL", "Y13_History_HL", "Y13_Biology_SL", "Y13_MathAA_SL", "Y13_TOK", "Y13_EE/CAS" ] },
+    { "name": "Karolina", "subjects": [ "Y13_English_Literature_HL", "Y13_French_ab_initio", "Y13_Psychology_HL", "Y13_ESS_SL", "Y13_Biology_SL", "Y13_Biology_HL", "Y13_MathAI_SL", "Y13_TOK", "Y13_EE/CAS" ] },
+    { "name": "Lea", "subjects": [ "Y13_English_Literature_HL", "Y13_German_ab_initio", "Y13_Psychology_HL", "Y13_Biology_SL", "Y13_Biology_HL", "Y13_Chemistry_HL", "Y13_Chemistry_Lab", "Y13_MathAA_SL", "Y13_TOK", "Y13_EE/CAS" ] },
+    { "name": "Luka D", "subjects": [ "Y13_English_Literature_HL", "Y13_German_ab_initio", "Y13_Business_HL", "Y13_History_SL", "Y13_History_HL", "Y13_ESS_SL", "Y13_MathAI_SL", "Y13_TOK", "Y13_EE/CAS" ] },
+    { "name": "Mariia", "subjects": [ "Y13_SSST", "Y13_English_B_SL", "Y13_German_B_SL", "Y13_German_B_HL", "Y13_Psychology_HL", "Y13_Physics_HL", "Y13_MathAA_HL", "Y13_TOK", "Y13_EE/CAS" ] },
+    { "name": "Martin", "subjects": [ "Y13_English_Literature_SL", "Y13_German_ab_initio", "Y13_ESS_SL", "Y13_Physics_HL", "Y13_Chemistry_HL", "Y13_Chemistry_Lab", "Y13_MathAA_HL", "Y13_TOK", "Y13_EE/CAS" ] },
+    { "name": "Maya", "subjects": [ "Y13_English_Literature_HL", "Y13_German_ab_initio", "Y13_Psychology_HL", "Y13_History_SL", "Y13_History_HL", "Y13_Biology_SL", "Y13_Biology_HL", "Y13_MathAA_SL", "Y13_TOK", "Y13_EE/CAS" ] },
+    { "importance": 15, "name": "Nicholas", "subjects": [ "Y13_English_Literature_HL", "Y13_French_B", "Y13_Psychology_HL", "Y13_Biology_SL", "Y13_Biology_HL", "Y13_Chemistry_HL", "Y13_Chemistry_Lab", "Y13_MathAA_SL", "Y13_TOK", "Y13_EE/CAS" ] },
+    { "name": "Polina", "subjects": [ "Y13_SSST", "Y13_English_B_SL", "Y13_English_B_HL", "Y13_Business_HL", "Y13_ESS_SL", "Y13_Psychology_HL", "Y13_MathAI_SL", "Y13_TOK", "Y13_EE/CAS" ] },
+    { "name": "Sofija", "subjects": [ "Y13_English_Literature_HL", "Y13_History_SL", "Y13_History_HL", "Y13_Psychology_HL", "Y13_Biology_SL", "Y13_MathAA_SL", "Y13_TOK", "Y13_EE/CAS" ] },
+    { "name": "Tatiana", "subjects": [ "Y13_SSST", "Y13_English_B_SL", "Y13_ESS_SL", "Y13_Biology_SL", "Y13_Biology_HL", "Y13_Chemistry_HL", "Y13_Chemistry_Lab", "Y13_MathAA_HL", "Y13_TOK", "Y13_EE/CAS" ] },
+    { "name": "Vasilisa", "subjects": [ "Y13_SSST", "Y13_English_B_SL", "Y13_English_B_HL", "Y13_Business_HL", "Y13_Psychology_HL", "Y13_MathAA_SL", "Y13_Physics_HL", "Y13_TOK", "Y13_EE/CAS" ] },
+    { "name": "Viktor", "subjects": [ "Y13_SSST", "Y13_English_B_SL", "Y13_English_B_HL", "Y13_ESS_SL", "Y13_Biology_SL", "Y13_Biology_HL", "Y13_Chemistry_HL", "Y13_Chemistry_Lab", "Y13_MathAA_SL", "Y13_TOK", "Y13_EE/CAS" ] }
+
+  ],
+  "lessons": [
+    // ["Monday", 7, "Staff_All", ["K5 - Biology"], [], 1]
+  ],
+
+  "model": {
+    "maxTime": [79200, "Maximum solving time in seconds. High value allows thorough search but may take hours."],
+    "workers": [null, "CPU cores to use. By default it is available cores minus two, but at least four."],
+    "showProgress": [true, "Display search progress with the current best score."]
+  }
+  
+}

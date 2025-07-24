@@ -1845,7 +1845,17 @@ def solve_fast(cfg: Dict[str, Any]) -> Dict[str, Any]:
         dname = day["name"]
         slot_list = []
         for slot in day["slots"]:
-            slot_list.append({"slotIndex": slot, "classes": schedule[dname][slot]})
+            slot_list.append(
+                {
+                    "slotIndex": slot,
+                    "classes": schedule[dname][slot],
+                    # placeholders for compatibility with generate_html
+                    "gaps": {"students": [], "teachers": []},
+                    "home": {"students": [], "teachers": []},
+                    "penalty": {},
+                    "penaltyDetails": [],
+                }
+            )
         export["days"].append({"name": dname, "slots": slot_list})
     export["totalPenalty"] = total_penalty
 

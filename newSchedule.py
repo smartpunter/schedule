@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sys
 import copy
 from collections import defaultdict
@@ -22,10 +23,17 @@ def _detect_duplicates(entities: List[Dict[str, Any]], key_fields: List[str]) ->
     return [names for names in groups.values() if len(names) > 1]
 
 
+def _load_json_with_comments(path: str) -> Dict[str, Any]:
+    """Return parsed JSON allowing //, # and /* */ comments."""
+    with open(path, "r", encoding="utf-8") as fh:
+        text = fh.read()
+    text = re.sub(r"//.*?$|#.*?$|/\*.*?\*/", "", text, flags=re.MULTILINE | re.DOTALL)
+    return json.loads(text)
+
+
 def load_config(path: str = "schedule-config.json") -> Dict[str, Any]:
     """Load configuration file and apply defaults."""
-    with open(path, "r", encoding="utf-8") as fh:
-        data = json.load(fh)
+    data = _load_json_with_comments(path)
 
     settings = data.get("settings", {})
     defaults = data.get("defaults", {})

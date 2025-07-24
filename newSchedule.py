@@ -246,6 +246,359 @@ def _init_schedule(
     return schedule
 
 
+def build_fast_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]]]:
+    """Build simplified schedule focusing on last lesson time."""
+    days = cfg["days"]
+    subjects = cfg["subjects"]
+    teachers = cfg.get("teachers", [])
+    students = cfg.get("students", [])
+    cabinets = cfg.get("cabinets", {})
+
+    teacher_names = [t["name"] for t in teachers]
+    teacher_map = {t["name"]: set(t.get("subjects", [])) for t in teachers}
+
+    teacher_limits: Dict[str, Dict[str, Set[int]]] = {}
+    for t in teachers:
+        name = t["name"]
+        allow = t.get("allowedSlots")
+        forbid = t.get("forbiddenSlots")
+        avail: Dict[str, Set[int]] = {}
+        for day in days:
+            dname = day["name"]
+            slots_set = set(day["slots"])
+            if allow is not None:
+                if dname in allow:
+                    al = allow[dname]
+                    allowed = slots_set.copy() if not al else set(al)
+                else:
+                    allowed = set()
+            else:
+                allowed = slots_set.copy()
+            if forbid is not None and dname in forbid:
+                fb = forbid[dname]
+                if not fb:
+                    allowed = set()
+                else:
+                    allowed -= set(fb)
+            avail[dname] = allowed
+        teacher_limits[name] = avail
+
+    student_limits: Dict[str, Dict[str, Set[int]]] = {}
+    students_by_subject: Dict[str, List[str]] = {}
+    student_size: Dict[str, int] = {}
+    for stu in students:
+        name = stu["name"]
+        allow = stu.get("allowedSlots")
+        forbid = stu.get("forbiddenSlots")
+        avail: Dict[str, Set[int]] = {}
+        for day in days:
+            dname = day["name"]
+            slots_set = set(day["slots"])
+            if allow is not None:
+                if dname in allow:
+                    al = allow[dname]
+                    allowed = slots_set.copy() if not al else set(al)
+                else:
+                    allowed = set()
+            else:
+                allowed = slots_set.copy()
+            if forbid is not None and dname in forbid:
+                fb = forbid[dname]
+                if not fb:
+                    allowed = set()
+                else:
+                    allowed -= set(fb)
+            avail[dname] = allowed
+        student_limits[name] = avail
+        student_size[name] = int(stu.get("group", 1))
+        for sid in stu.get("subjects", []):
+            students_by_subject.setdefault(sid, []).append(name)
+
+    # mapping from subject class to fixed lesson info
+    day_lookup = {d["name"]: idx for idx, d in enumerate(days)}
+    fixed_map: Dict[tuple, Dict[str, Any]] = {}
+    remaining: Dict[str, List[int]] = {
+        sid: list(range(len(subj.get("classes", [])))) for sid, subj in subjects.items()
+    }
+    length_map: Dict[str, Dict[int, List[int]]] = {}
+    for sid, subj in subjects.items():
+        lm: Dict[int, List[int]] = defaultdict(list)
+        for idx, ln in enumerate(subj.get("classes", [])):
+            lm.setdefault(ln, []).append(idx)
+        length_map[sid] = lm
+
+    for entry in cfg.get("lessons", []):
+        day = entry["day"]
+        slot = int(entry["slot"])
+        sid = entry["subject"]
+        length = entry.get("length")
+        if length is None:
+            idx = None
+            for i in list(remaining[sid]):
+                if slot + subjects[sid]["classes"][i] - 1 <= max(days[day_lookup[day]]["slots"]):
+                    idx = i
+                    length = subjects[sid]["classes"][i]
+                    break
+            if idx is None:
+                idx = remaining[sid][0]
+                length = subjects[sid]["classes"][idx]
+        else:
+            length = int(length)
+            cand = length_map[sid].get(length, [])
+            idx = next((i for i in cand if i in remaining[sid]), None)
+            if idx is None:
+                raise ValueError(f"No class of length {length} left for subject {sid}")
+        remaining[sid].remove(idx)
+        cabinets_fixed = entry["cabinets"]
+        if isinstance(cabinets_fixed, str):
+            cabinets_fixed = [cabinets_fixed]
+        teachers_fixed = entry.get("teachers")
+        if isinstance(teachers_fixed, str):
+            teachers_fixed = [teachers_fixed]
+        fixed_map[(sid, idx)] = {
+            "day": day,
+            "day_idx": day_lookup[day],
+            "start": slot,
+            "length": length,
+            "cabinets": cabinets_fixed,
+            "teachers": teachers_fixed,
+        }
+
+    idx_to_day: List[int] = []
+    idx_to_slot: List[int] = []
+    idx_map: Dict[tuple, int] = {}
+    for d_idx, day in enumerate(days):
+        for sl in day["slots"]:
+            idx_map[(d_idx, sl)] = len(idx_to_day)
+            idx_to_day.append(d_idx)
+            idx_to_slot.append(sl)
+
+    model = cp_model.CpModel()
+
+    class_info: Dict[tuple, Dict[str, Any]] = {}
+    teacher_intervals: Dict[str, List[cp_model.IntervalVar]] = defaultdict(list)
+    cabinet_intervals: Dict[str, List[cp_model.IntervalVar]] = defaultdict(list)
+    student_intervals: Dict[str, List[cp_model.IntervalVar]] = defaultdict(list)
+
+    for sid, subj in subjects.items():
+        class_lengths = subj.get("classes", [])
+        allowed_teachers = subj.get("teachers", [])
+        required_teachers = int(subj.get("requiredTeachers", 1))
+        allowed_cabs = subj.get("cabinets", list(cabinets))
+        required_cabs = int(subj.get("requiredCabinets", 1))
+        class_students = students_by_subject.get(sid, [])
+        size = sum(student_size[s] for s in class_students)
+        for idx, length in enumerate(class_lengths):
+            key = (sid, idx)
+            fixed = fixed_map.get(key)
+            if fixed is not None:
+                start_idx = idx_map[(fixed["day_idx"], fixed["start"])]
+                start_var = model.NewConstant(start_idx)
+                day_var = model.NewConstant(fixed["day_idx"])
+                slot_var = model.NewConstant(fixed["start"])
+                teachers_list = fixed.get("teachers")
+                cabinets_list = fixed.get("cabinets")
+            else:
+                choices = []
+                for d_idx, day in enumerate(days):
+                    slots = day["slots"]
+                    dname = day["name"]
+                    for sl in slots:
+                        if sl + length - 1 > slots[-1]:
+                            continue
+                        if not all(
+                            sl + off in student_limits[s][dname]
+                            for s in class_students
+                            for off in range(length)
+                        ):
+                            continue
+                        avail_teachers = [
+                            t
+                            for t in allowed_teachers
+                            if all(
+                                sl + off in teacher_limits[t][dname]
+                                for off in range(length)
+                            )
+                        ]
+                        if len(avail_teachers) < required_teachers:
+                            continue
+                        choices.append(idx_map[(d_idx, sl)])
+                if not choices:
+                    raise ValueError(f"No slots available for {sid} class {idx}")
+                start_var = model.NewIntVarFromDomain(cp_model.Domain.FromValues(choices), f"start_{sid}_{idx}")
+                day_vals = [idx_to_day[c] for c in choices]
+                slot_vals = [idx_to_slot[c] for c in choices]
+                day_var = model.NewIntVar(0, len(days) - 1, f"day_{sid}_{idx}")
+                slot_var = model.NewIntVar(0, max(idx_to_slot), f"slot_{sid}_{idx}")
+                model.AddElement(start_var, day_vals, day_var)
+                model.AddElement(start_var, slot_vals, slot_var)
+                teachers_list = None
+                cabinets_list = None
+
+            end_var = model.NewIntVar(0, len(idx_to_day) + max(class_lengths), f"end_{sid}_{idx}")
+            model.Add(end_var == start_var + length)
+            interval = model.NewIntervalVar(start_var, length, end_var, f"cls_{sid}_{idx}")
+
+            teacher_vars = {}
+            if teachers_list is None:
+                teach_choices = [t for t in allowed_teachers if t in teacher_map]
+                if len(teach_choices) < required_teachers:
+                    raise ValueError(
+                        f"Subject {sid} requires {required_teachers} teachers but only {len(teach_choices)} available"
+                    )
+                vars_list = []
+                for t in teach_choices:
+                    v = model.NewBoolVar(f"teach_{sid}_{idx}_{t}")
+                    teacher_vars[t] = v
+                    allowed = [c for c in range(len(idx_to_day)) if all(idx_to_slot[c] + off in teacher_limits[t][days[idx_to_day[c]]["name"]] for off in range(length))]
+                    for c in range(len(idx_to_day)):
+                        if c not in allowed:
+                            model.Add(start_var != c).OnlyEnforceIf(v)
+                    t_interval = model.NewOptionalIntervalVar(start_var, length, end_var, v, f"t_{sid}_{idx}_{t}")
+                    teacher_intervals[t].append(t_interval)
+                    vars_list.append(v)
+                if not vars_list:
+                    raise ValueError(f"No teacher for {sid}")
+                model.Add(sum(vars_list) == required_teachers)
+            else:
+                for t in teachers_list:
+                    v = model.NewConstant(1)
+                    teacher_vars[t] = v
+                    t_interval = model.NewOptionalIntervalVar(start_var, length, end_var, v, f"t_{sid}_{idx}_{t}")
+                    teacher_intervals[t].append(t_interval)
+
+            cabinet_vars = {}
+            if cabinets_list is None:
+                cab_choices = [
+                    c
+                    for c in allowed_cabs
+                    if c in cabinets and cabinets[c]["capacity"] >= size
+                ]
+                if len(cab_choices) < required_cabs:
+                    raise ValueError(
+                        f"Subject {sid} requires {required_cabs} cabinets but only {len(cab_choices)} available"
+                    )
+                vars_c = []
+                for c in cab_choices:
+                    v = model.NewBoolVar(f"cab_{sid}_{idx}_{c}")
+                    cabinet_vars[c] = v
+                    c_interval = model.NewOptionalIntervalVar(start_var, length, end_var, v, f"c_{sid}_{idx}_{c}")
+                    cabinet_intervals[c].append(c_interval)
+                    vars_c.append(v)
+                if not vars_c:
+                    raise ValueError(f"No cabinet for {sid}")
+                model.Add(sum(vars_c) == required_cabs)
+            else:
+                for c in cabinets_list:
+                    v = model.NewConstant(1)
+                    cabinet_vars[c] = v
+                    c_interval = model.NewOptionalIntervalVar(start_var, length, end_var, v, f"c_{sid}_{idx}_{c}")
+                    cabinet_intervals[c].append(c_interval)
+
+            for s in class_students:
+                student_intervals[s].append(interval)
+
+            class_info[key] = {
+                "start": start_var,
+                "day": day_var,
+                "slot": slot_var,
+                "length": length,
+                "end_val": end_var,
+                "teachers": teacher_vars,
+                "cabinets": cabinet_vars,
+                "students": class_students,
+                "size": size,
+            }
+
+    for t in teacher_intervals:
+        model.AddNoOverlap(teacher_intervals[t])
+    for c in cabinet_intervals:
+        model.AddNoOverlap(cabinet_intervals[c])
+    for s in student_intervals:
+        model.AddNoOverlap(student_intervals[s])
+
+    max_slot = max(sl for d in days for sl in d["slots"]) + max(len(s.get("classes", [])) for s in subjects.values())
+    penalties = []
+    for t in teacher_names:
+        for d_idx, day in enumerate(days):
+            ends = []
+            for key, info in class_info.items():
+                if t in info["teachers"]:
+                    tv = info["teachers"][t]
+                    is_day = model.NewBoolVar(f"day_t_{key[0]}_{key[1]}_{t}_{d_idx}")
+                    model.Add(info["day"] == d_idx).OnlyEnforceIf(is_day)
+                    model.Add(info["day"] != d_idx).OnlyEnforceIf(is_day.Not())
+                    active = model.NewBoolVar(f"act_t_{key[0]}_{key[1]}_{t}_{d_idx}")
+                    model.AddMultiplicationEquality(active, [tv, is_day])
+                    val = model.NewIntVar(0, max_slot + 1, f"end_t_{key[0]}_{key[1]}_{t}_{d_idx}")
+                    model.Add(val == info["slot"] + info["length"]).OnlyEnforceIf(active)
+                    model.Add(val == 0).OnlyEnforceIf(active.Not())
+                    ends.append(val)
+            if ends:
+                last = model.NewIntVar(0, max_slot + 1, f"last_t_{t}_{d_idx}")
+                model.AddMaxEquality(last, ends)
+            else:
+                last = model.NewConstant(0)
+            penalties.append(last)
+    for s in student_intervals:
+        weight = student_size.get(s, 1)
+        for d_idx, day in enumerate(days):
+            ends = []
+            for key, info in class_info.items():
+                if s in info["students"]:
+                    is_day = model.NewBoolVar(f"day_s_{key[0]}_{key[1]}_{s}_{d_idx}")
+                    model.Add(info["day"] == d_idx).OnlyEnforceIf(is_day)
+                    model.Add(info["day"] != d_idx).OnlyEnforceIf(is_day.Not())
+                    val = model.NewIntVar(0, max_slot + 1, f"end_s_{key[0]}_{key[1]}_{s}_{d_idx}")
+                    model.Add(val == info["slot"] + info["length"]).OnlyEnforceIf(is_day)
+                    model.Add(val == 0).OnlyEnforceIf(is_day.Not())
+                    ends.append(val)
+            if ends:
+                last = model.NewIntVar(0, max_slot + 1, f"last_s_{s}_{d_idx}")
+                model.AddMaxEquality(last, ends)
+            else:
+                last = model.NewConstant(0)
+            if weight > 1:
+                scaled = model.NewIntVar(0, max_slot * weight + weight, f"sc_{s}_{d_idx}")
+                model.AddMultiplicationEquality(scaled, [last, weight])
+                penalties.append(scaled)
+            else:
+                penalties.append(last)
+
+    model.Minimize(sum(penalties))
+
+    solver = cp_model.CpSolver()
+    solver.parameters.max_time_in_seconds = cfg.get("model", {}).get("maxTime", [DEFAULT_MAX_TIME])[0]
+    solver.parameters.num_search_workers = cfg.get("model", {}).get("workers", [DEFAULT_WORKERS])[0] or DEFAULT_WORKERS
+    solver.parameters.log_search_progress = cfg.get("model", {}).get("showProgress", [DEFAULT_SHOW_PROGRESS])[0]
+
+    status = solver.Solve(model)
+    if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        raise RuntimeError("No feasible schedule found")
+
+    schedule = _init_schedule(days)
+    for key, info in class_info.items():
+        start = solver.Value(info["slot"])
+        day_idx = solver.Value(info["day"])
+        length = info["length"]
+        dname = days[day_idx]["name"]
+        teachers_assigned = [t for t, v in info["teachers"].items() if solver.Value(v)]
+        cabinets_assigned = [c for c, v in info["cabinets"].items() if solver.Value(v)]
+        for s in range(start, start + length):
+            schedule[dname][s].append(
+                {
+                    "subject": key[0],
+                    "teachers": teachers_assigned,
+                    "cabinets": cabinets_assigned,
+                    "students": info["students"],
+                    "size": info["size"],
+                    "start": start,
+                    "length": length,
+                }
+            )
+
+    return schedule
+
 def _prepare_fixed_classes(
     cfg: Dict[str, Any],
     teacher_limits: Dict[str, Dict[str, Set[int]]],
@@ -1435,6 +1788,52 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
                 }
             )
         export["days"].append({"name": name, "slots": slot_list})
+    export["totalPenalty"] = total_penalty
+
+    return export
+
+
+def solve_fast(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Solve using the simplified model and compute total penalty."""
+    schedule = build_fast_model(cfg)
+
+    teacher_names = [t["name"] for t in cfg.get("teachers", [])]
+    student_names = [s["name"] for s in cfg.get("students", [])]
+    student_size = {s["name"]: int(s.get("group", 1)) for s in cfg.get("students", [])}
+
+    teacher_last = {t: {d["name"]: -1 for d in cfg["days"]} for t in teacher_names}
+    student_last = {s: {d["name"]: -1 for d in cfg["days"]} for s in student_names}
+
+    for day in cfg["days"]:
+        dname = day["name"]
+        for slot in day["slots"]:
+            for cls in schedule[dname][slot]:
+                end_slot = cls["start"] + cls["length"] - 1
+                for t in cls.get("teachers", []):
+                    teacher_last[t][dname] = max(teacher_last[t][dname], end_slot)
+                for stu in cls.get("students", []):
+                    student_last[stu][dname] = max(student_last[stu][dname], end_slot)
+
+    total_penalty = 0
+    for t in teacher_names:
+        for d in cfg["days"]:
+            val = teacher_last[t][d["name"]]
+            if val >= 0:
+                total_penalty += val + 1
+    for s in student_names:
+        weight = student_size.get(s, 1)
+        for d in cfg["days"]:
+            val = student_last[s][d["name"]]
+            if val >= 0:
+                total_penalty += (val + 1) * weight
+
+    export = {"days": []}
+    for day in cfg["days"]:
+        dname = day["name"]
+        slot_list = []
+        for slot in day["slots"]:
+            slot_list.append({"slotIndex": slot, "classes": schedule[dname][slot]})
+        export["days"].append({"name": dname, "slots": slot_list})
     export["totalPenalty"] = total_penalty
 
     return export
@@ -2640,7 +3039,10 @@ def main() -> None:
         with open(out_path, "r", encoding="utf-8") as fh:
             result = json.load(fh)
     else:
-        result = solve(cfg)
+        if obj_mode == "fast":
+            result = solve_fast(cfg)
+        else:
+            result = solve(cfg)
         with open(out_path, "w", encoding="utf-8") as fh:
             json.dump(result, fh, ensure_ascii=False, indent=2)
         print(f"Schedule written to {out_path}")

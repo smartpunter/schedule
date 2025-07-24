@@ -1105,6 +1105,11 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
 
     status = solver.Solve(model)
     if status == cp_model.INFEASIBLE:
+        print("No feasible schedule found. Diagnosing configuration...")
+        diagnose_config(cfg)
+
+        print("Rendering assumptions...")
+
         core = solver.SufficientAssumptionsForInfeasibility()
         counts: Dict[tuple, int] = defaultdict(int)
         for lit in core:

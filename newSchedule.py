@@ -180,36 +180,42 @@ def validate_config(cfg: Dict[str, Any]) -> None:
                 raise ValueError(f"Cabinet {cname} allows unknown subject '{sid}'")
 
     for lesson in cfg.get("lessons", []):
-        if not isinstance(lesson, list) or len(lesson) < 4:
-            raise ValueError(
-                "Lesson entry must contain at least day, slot, subject and cabinet(s)"
-            )
-        day, slot, sid, cabs = lesson[:4]
+        # lessons may come from the raw config (list form) or from load_config
+        if isinstance(lesson, dict):
+            day = lesson.get("day")
+            slot = lesson.get("slot")
+            sid = lesson.get("subject")
+            cabs = lesson.get("cabinets", [])
+            teachers_part = lesson.get("teachers")
+        else:
+            if not isinstance(lesson, list) or len(lesson) < 4:
+                raise ValueError(
+                    "Lesson entry must contain at least day, slot, subject and cabinet(s)"
+                )
+            day, slot, sid, cabs = lesson[:4]
+            teachers_part = None
+            if len(lesson) == 5 and not isinstance(lesson[4], int):
+                teachers_part = lesson[4]
+            elif len(lesson) >= 6:
+                teachers_part = lesson[4]
+
         if day not in days:
             raise ValueError(f"Unknown day '{day}' in lesson {lesson}")
         if int(slot) not in days[day]:
             raise ValueError(f"Slot {slot} not available on {day}")
         if sid not in subjects:
             raise ValueError(f"Unknown subject '{sid}' in lesson {lesson}")
-        cab_list = [cabs] if isinstance(cabs, str) else cabs
+        cab_list = [cabs] if isinstance(cabs, str) else list(cabs)
         for cab in cab_list:
             if cab not in cabinets:
                 raise ValueError(f"Unknown cabinet '{cab}' in lesson {lesson}")
-        if len(lesson) >= 5:
-            teachers_part = None
-            if len(lesson) == 5 and not isinstance(lesson[4], int):
-                teachers_part = lesson[4]
-            elif len(lesson) >= 6:
-                teachers_part = lesson[4]
-            if teachers_part is not None:
-                t_list = (
-                    [teachers_part]
-                    if isinstance(teachers_part, str)
-                    else list(teachers_part)
-                )
-                for t in t_list:
-                    if t not in teachers:
-                        raise ValueError(f"Unknown teacher '{t}' in lesson {lesson}")
+        if teachers_part is not None:
+            t_list = (
+                [teachers_part] if isinstance(teachers_part, str) else list(teachers_part)
+            )
+            for t in t_list:
+                if t not in teachers:
+                    raise ValueError(f"Unknown teacher '{t}' in lesson {lesson}")
 
 
 def _check_slot_limits(
@@ -1713,10 +1719,12 @@ def generate_html(
     path: str = "schedule.html",
     generated: str | None = None,
     include_config: bool = False,
+    raw_config: str | None = None,
 ) -> None:
     """Create interactive HTML overview of the schedule."""
     schedule_json = json.dumps(schedule, ensure_ascii=False)
     cfg_json = json.dumps(cfg, ensure_ascii=False)
+    raw_json = json.dumps(raw_config) if raw_config is not None else "null"
     html = r"""
 <!DOCTYPE html>
 <html lang="en">
@@ -1803,6 +1811,7 @@ __META__
 <script>
 const scheduleData = __SCHEDULE__;
 const configData = __CONFIG__;
+const configRaw = __CONFIG_RAW__;
 </script>
 <script>
 (function(){
@@ -1900,12 +1909,11 @@ historyIndex=historyStack.length-1;
 renderModal();
 }
 function showConfig(){
- const json=JSON.stringify(configData,null,2);
  const html='<h2>Configuration</h2><button id="cfg-copy">Copy</button><pre id="cfg-pre"></pre>';
  openModal(html);
- document.getElementById('cfg-pre').textContent=json;
+ document.getElementById('cfg-pre').textContent=configRaw;
  const btn=document.getElementById('cfg-copy');
- if(btn){btn.onclick=()=>{navigator.clipboard.writeText(json);};}
+ if(btn){btn.onclick=()=>{navigator.clipboard.writeText(configRaw);};}
 }
 const COLOR_MIN=[220,255,220];
 const COLOR_MID=[255,255,255];
@@ -2407,6 +2415,7 @@ buildStudents();
     html = (
         html.replace("__SCHEDULE__", schedule_json)
         .replace("__CONFIG__", cfg_json)
+        .replace("__CONFIG_RAW__", raw_json)
         .replace("__META__", meta)
     )
     with open(path, "w", encoding="utf-8") as fh:
@@ -2435,6 +2444,9 @@ def main() -> None:
     if not os.path.exists(cfg_path):
         print(f"Config '{cfg_path}' not found.")
         return
+
+    with open(cfg_path, "r", encoding="utf-8") as fh:
+        raw_cfg_text = fh.read()
 
     cfg = load_config(cfg_path)
     validate_config(cfg)
@@ -2493,7 +2505,7 @@ def main() -> None:
     if show_analysis:
         report_analysis(result, cfg)
         gen_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        generate_html(result, cfg, html_path, gen_time, fresh)
+        generate_html(result, cfg, html_path, gen_time, fresh, raw_cfg_text)
         print(f"{html_path} generated")
 
 

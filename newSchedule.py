@@ -1,11 +1,19 @@
+import copy
 import json
 import os
 import sys
-import copy
 from collections import defaultdict
 from statistics import mean
-from typing import Dict, List, Any, Set
+from typing import Any, Dict, List, Set
+
+try:
+    import json5  # type: ignore
+
+    _json_loader = json5.load
+except Exception:  # pragma: no cover - fallback when json5 is missing
+    _json_loader = json.load
 from datetime import datetime
+
 from ortools.sat.python import cp_model
 
 DEFAULT_MAX_TIME = 10800  # 3 hours
@@ -13,7 +21,9 @@ DEFAULT_SHOW_PROGRESS = True
 DEFAULT_WORKERS = max(os.cpu_count() - 2, 4) if os.cpu_count() else 4
 
 
-def _detect_duplicates(entities: List[Dict[str, Any]], key_fields: List[str]) -> List[List[str]]:
+def _detect_duplicates(
+    entities: List[Dict[str, Any]], key_fields: List[str]
+) -> List[List[str]]:
     """Return lists of entity names that share identical parameters."""
     groups: Dict[tuple, List[str]] = defaultdict(list)
     for ent in entities:
@@ -23,9 +33,13 @@ def _detect_duplicates(entities: List[Dict[str, Any]], key_fields: List[str]) ->
 
 
 def load_config(path: str = "schedule-config.json") -> Dict[str, Any]:
-    """Load configuration file and apply defaults."""
+    """Load configuration file and apply defaults.
+
+    This function supports JSON files with comments if the ``json5`` module
+    is installed. Otherwise it falls back to the standard ``json`` loader.
+    """
     with open(path, "r", encoding="utf-8") as fh:
-        data = json.load(fh)
+        data = _json_loader(fh)
 
     settings = data.get("settings", {})
     defaults = data.get("defaults", {})
@@ -108,9 +122,7 @@ def load_config(path: str = "schedule-config.json") -> Dict[str, Any]:
                 "subject": subject_id,
                 "length": int(length) if length is not None else None,
                 "cabinets": cabinet,
-                "teachers": list(teachers)
-                if teachers is not None
-                else None,
+                "teachers": list(teachers) if teachers is not None else None,
             }
         )
     data["lessons"] = lessons_parsed
@@ -165,9 +177,7 @@ def validate_config(cfg: Dict[str, Any]) -> None:
     for cname, cab in cfg.get("cabinets", {}).items():
         for sid in cab.get("allowedSubjects", []):
             if sid not in subjects:
-                raise ValueError(
-                    f"Cabinet {cname} allows unknown subject '{sid}'"
-                )
+                raise ValueError(f"Cabinet {cname} allows unknown subject '{sid}'")
 
     for lesson in cfg.get("lessons", []):
         if not isinstance(lesson, list) or len(lesson) < 4:
@@ -199,12 +209,12 @@ def validate_config(cfg: Dict[str, Any]) -> None:
                 )
                 for t in t_list:
                     if t not in teachers:
-                        raise ValueError(
-                            f"Unknown teacher '{t}' in lesson {lesson}"
-                        )
+                        raise ValueError(f"Unknown teacher '{t}' in lesson {lesson}")
 
 
-def _check_slot_limits(days: Dict[str, Set[int]], entry: Dict[str, Any], name: str) -> None:
+def _check_slot_limits(
+    days: Dict[str, Set[int]], entry: Dict[str, Any], name: str
+) -> None:
     """Validate slot restrictions for a teacher or student."""
     for key in ("allowedSlots", "forbiddenSlots"):
         limits = entry.get(key, {})
@@ -219,7 +229,9 @@ def _check_slot_limits(days: Dict[str, Set[int]], entry: Dict[str, Any], name: s
                         )
 
 
-def _init_schedule(days: List[Dict[str, Any]]) -> Dict[str, Dict[int, List[Dict[str, Any]]]]:
+def _init_schedule(
+    days: List[Dict[str, Any]],
+) -> Dict[str, Dict[int, List[Dict[str, Any]]]]:
     """Prepare empty schedule structure."""
     schedule = {}
     for day in days:
@@ -328,9 +340,7 @@ def _prepare_fixed_classes(
                 raise ValueError(f"Cabinet '{room}' not allowed for subject {sid}")
             allowed = cabinets[room].get("allowedSubjects")
             if allowed and sid not in allowed:
-                raise ValueError(
-                    f"Subject {sid} not permitted in cabinet '{room}'"
-                )
+                raise ValueError(f"Subject {sid} not permitted in cabinet '{room}'")
         total_capacity = sum(cabinets[r]["capacity"] for r in rooms)
         if total_capacity < class_size:
             raise ValueError(
@@ -357,10 +367,7 @@ def _prepare_fixed_classes(
                 t
                 for t in teacher_map
                 if sid in teacher_map[t]
-                and all(
-                    s in teacher_limits[t][day]
-                    for s in range(slot, slot + length)
-                )
+                and all(s in teacher_limits[t][day] for s in range(slot, slot + length))
             ]
             if len(available_teachers) < required:
                 raise ValueError(
@@ -379,7 +386,11 @@ def _prepare_fixed_classes(
             raise ValueError(
                 f"Lesson for subject {sid} missing primary teacher(s): {missing}"
             )
-        if not explicit_teachers and primary and not primary.issubset(set(available_teachers)):
+        if (
+            not explicit_teachers
+            and primary
+            and not primary.issubset(set(available_teachers))
+        ):
             missing = ", ".join(sorted(primary - set(available_teachers)))
             raise ValueError(
                 f"Primary teacher(s) {missing} not available for fixed lesson of {sid}"
@@ -549,9 +560,7 @@ def build_model(
             fixed = fixed_classes.get(key)
             cand_list = []
             if fixed is not None:
-                var = model.NewBoolVar(
-                    f"x_{sid}_{idx}_{fixed['day']}_{fixed['start']}"
-                )
+                var = model.NewBoolVar(f"x_{sid}_{idx}_{fixed['day']}_{fixed['start']}")
                 model.Add(var == 1)
                 diff = abs(fixed["start"] - subj.get("optimalSlot", 0))
                 teachers_for_pen = (
@@ -560,17 +569,11 @@ def build_model(
                     else fixed["available_teachers"]
                 )
                 stud_pen_map = {
-                    s: diff
-                    * penalty_val
-                    * student_importance[s]
-                    * student_size[s]
+                    s: diff * penalty_val * student_importance[s] * student_size[s]
                     for s in enrolled
                 }
                 teach_pen_map = {
-                    t: diff
-                    * penalty_val
-                    * teacher_importance[t]
-                    * teacher_as_students
+                    t: diff * penalty_val * teacher_importance[t] * teacher_as_students
                     for t in teachers_for_pen
                 }
                 cand_list.append(
@@ -694,7 +697,10 @@ def build_model(
                 if cab_vars:
                     model.Add(sum(cab_vars.values()) == required_cabs * cand["var"])
                     model.Add(
-                        sum(cabinets[c]["capacity"] * cab_vars[c] for c in allowed_cabinets)
+                        sum(
+                            cabinets[c]["capacity"] * cab_vars[c]
+                            for c in allowed_cabinets
+                        )
                         >= class_size * cand["var"]
                     )
                 cand["cabinet_pres"] = cab_vars
@@ -704,7 +710,7 @@ def build_model(
                     cand["length"],
                     cand["start"] + cand["length"],
                     cand["var"],
-                    f"int_{sid}_{idx}_{cand['day']}_{cand['start']}"
+                    f"int_{sid}_{idx}_{cand['day']}_{cand['start']}",
                 )
             candidates[key] = cand_list
 
@@ -717,9 +723,7 @@ def build_model(
             vars_in_day = []
             for idx in range(class_count):
                 vars_in_day.extend(
-                    c["var"]
-                    for c in candidates[(sid, idx)]
-                    if c["day"] == day["name"]
+                    c["var"] for c in candidates[(sid, idx)] if c["day"] == day["name"]
                 )
             if vars_in_day:
                 model.Add(sum(vars_in_day) <= 1)
@@ -752,7 +756,7 @@ def build_model(
                     cand["length"],
                     end,
                     pres,
-                    f"tint_{sid}_{idx}_{t}_{cand['day']}_{cand['start']}"
+                    f"tint_{sid}_{idx}_{t}_{cand['day']}_{cand['start']}",
                 )
                 teacher_intervals[t][cand["day"]].append((interval, start, end, pres))
             for cab, cv in cand.get("cabinet_pres", {}).items():
@@ -761,7 +765,7 @@ def build_model(
                     cand["length"],
                     cand["start"] + cand["length"],
                     cv,
-                    f"cint_{sid}_{idx}_{cab}_{cand['day']}_{cand['start']}"
+                    f"cint_{sid}_{idx}_{cab}_{cand['day']}_{cand['start']}",
                 )
                 cabinet_intervals[cab][cand["day"]].append((interval, start, end, cv))
 
@@ -896,14 +900,19 @@ def build_model(
                     for k in range(1, max_len + 1):
                         if idx < k - 1:
                             continue
-                        parts = [teacher_slot[(t, dname, slots[idx - j])] for j in range(k)]
+                        parts = [
+                            teacher_slot[(t, dname, slots[idx - j])] for j in range(k)
+                        ]
                         st = model.NewBoolVar(f"tstreak_{t}_{dname}_{s}_{k}")
                         for p in parts:
                             model.Add(st <= p)
                         model.Add(st >= sum(parts) - k + 1)
                         if t_inc[k - 1] > 0:
                             teacher_streak_exprs[t].append(
-                                st * t_inc[k - 1] * teacher_importance[t] * teacher_as_students
+                                st
+                                * t_inc[k - 1]
+                                * teacher_importance[t]
+                                * teacher_as_students
                             )
     student_streak_exprs = {s: [] for s in student_importance}
     if student_streak_list:
@@ -921,17 +930,27 @@ def build_model(
                     for k in range(1, max_len + 1):
                         if idx < k - 1:
                             continue
-                        parts = [student_slot[(sname, dname, slots[idx - j])] for j in range(k)]
+                        parts = [
+                            student_slot[(sname, dname, slots[idx - j])]
+                            for j in range(k)
+                        ]
                         st = model.NewBoolVar(f"sstreak_{sname}_{dname}_{s}_{k}")
                         for p in parts:
                             model.Add(st <= p)
                         model.Add(st >= sum(parts) - k + 1)
                         if s_inc[k - 1] > 0:
                             student_streak_exprs[sname].append(
-                                st * s_inc[k - 1] * student_importance[sname] * student_size[sname]
+                                st
+                                * s_inc[k - 1]
+                                * student_importance[sname]
+                                * student_size[sname]
                             )
-    teacher_streak_exprs = {k: sum(v) if v else 0 for k, v in teacher_streak_exprs.items()}
-    student_streak_exprs = {k: sum(v) if v else 0 for k, v in student_streak_exprs.items()}
+    teacher_streak_exprs = {
+        k: sum(v) if v else 0 for k, v in teacher_streak_exprs.items()
+    }
+    student_streak_exprs = {
+        k: sum(v) if v else 0 for k, v in student_streak_exprs.items()
+    }
 
     # penalties for consecutive days of the same subject
     consecutive_vars = []
@@ -948,8 +967,12 @@ def build_model(
                 if i == j:
                     continue
                 var = model.NewBoolVar(f"cons_{sid}_{i}_{j}")
-                model.Add(class_day_idx[(sid, j)] == class_day_idx[(sid, i)] + 1).OnlyEnforceIf(var)
-                model.Add(class_day_idx[(sid, j)] != class_day_idx[(sid, i)] + 1).OnlyEnforceIf(var.Not())
+                model.Add(
+                    class_day_idx[(sid, j)] == class_day_idx[(sid, i)] + 1
+                ).OnlyEnforceIf(var)
+                model.Add(
+                    class_day_idx[(sid, j)] != class_day_idx[(sid, i)] + 1
+                ).OnlyEnforceIf(var.Not())
                 pair_vars.append(var)
             if pair_vars:
                 any_v = model.NewBoolVar(f"cons_any_{sid}_{j}")
@@ -962,7 +985,8 @@ def build_model(
     obj_mode = settings.get("objective", ["total"])[0]
 
     teacher_gap_exprs = {
-        t: gap_teacher_val * teacher_importance[t]
+        t: gap_teacher_val
+        * teacher_importance[t]
         * sum(var for var, tt in teacher_gap_vars if tt == t)
         for t in teacher_names
     }
@@ -1064,9 +1088,7 @@ def build_model(
             )
         for s in student_importance:
             model.Add(
-                student_gap_exprs[s]
-                + student_unopt_exprs[s]
-                + student_streak_exprs[s]
+                student_gap_exprs[s] + student_unopt_exprs[s] + student_streak_exprs[s]
                 <= max_pen
             )
         model.Minimize(max_pen)
@@ -1106,9 +1128,7 @@ def build_model(
                     if solver.Value(cv)
                 ]
                 assigned_teachers = [
-                    t
-                    for t, tv in c.get("teacher_pres", {}).items()
-                    if solver.Value(tv)
+                    t for t, tv in c.get("teacher_pres", {}).items() if solver.Value(tv)
                 ]
                 for s in range(c["start"], c["start"] + c["length"]):
                     schedule[c["day"]][s].append(
@@ -1158,9 +1178,7 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
                 for stu in cls["students"]:
                     student_slots[stu][name].add(slot)
 
-    teacher_state = {
-        t: {day["name"]: {} for day in cfg["days"]} for t in teacher_names
-    }
+    teacher_state = {t: {day["name"]: {} for day in cfg["days"]} for t in teacher_names}
     defaults = cfg.get("defaults", {})
     teach_arrive = {
         t["name"]: t.get(
@@ -1188,9 +1206,7 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
                 else:
                     teacher_state[t][name][s] = "gap"
 
-    student_state = {
-        s: {day["name"]: {} for day in cfg["days"]} for s in student_names
-    }
+    student_state = {s: {day["name"]: {} for day in cfg["days"]} for s in student_names}
     stud_arrive = {
         s["name"]: s.get(
             "arriveEarly",
@@ -1220,12 +1236,10 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
     def_teacher_imp = defaults.get("teacherImportance", [1])[0]
     def_student_imp = defaults.get("studentImportance", [0])[0]
     teacher_importance = {
-        t["name"]: t.get("importance", def_teacher_imp)
-        for t in cfg.get("teachers", [])
+        t["name"]: t.get("importance", def_teacher_imp) for t in cfg.get("teachers", [])
     }
     student_importance = {
-        s["name"]: s.get("importance", def_student_imp)
-        for s in cfg.get("students", [])
+        s["name"]: s.get("importance", def_student_imp) for s in cfg.get("students", [])
     }
     default_opt = defaults.get("optimalSlot", [0])[0]
 
@@ -1234,8 +1248,7 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
         for day in cfg["days"]
     }
     slot_penalty_details = {
-        day["name"]: {slot: [] for slot in day["slots"]}
-        for day in cfg["days"]
+        day["name"]: {slot: [] for slot in day["slots"]} for day in cfg["days"]
     }
 
     # calculate penalties per slot using individual importance
@@ -1249,16 +1262,28 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
                 if teacher_state[t][dname][slot] == "gap":
                     p = penalties_cfg.get("gapTeacher", 0) * teacher_importance[t]
                     slot_penalties[dname][slot]["gapTeacher"] += p
-                    slot_penalty_details[dname][slot].append({"name": t, "type": "gapTeacher", "amount": p})
+                    slot_penalty_details[dname][slot].append(
+                        {"name": t, "type": "gapTeacher", "amount": p}
+                    )
                 if teacher_state[t][dname][slot] == "class":
                     teach_count[t] += 1
-                    val_idx = min(len(teacher_streak_list) - 1, teach_count[t] - 1) if teacher_streak_list else -1
+                    val_idx = (
+                        min(len(teacher_streak_list) - 1, teach_count[t] - 1)
+                        if teacher_streak_list
+                        else -1
+                    )
                     if val_idx >= 0:
                         pen = teacher_streak_list[val_idx]
                         if pen:
                             amount = pen * teacher_importance[t] * teacher_as_students
                             slot_penalties[dname][slot]["teacherLessonStreak"] += amount
-                            slot_penalty_details[dname][slot].append({"name": t, "type": "teacherLessonStreak", "amount": amount})
+                            slot_penalty_details[dname][slot].append(
+                                {
+                                    "name": t,
+                                    "type": "teacherLessonStreak",
+                                    "amount": amount,
+                                }
+                            )
                 else:
                     teach_count[t] = 0
             # gap penalties for students
@@ -1270,16 +1295,32 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
                         * student_size.get(sname, 1)
                     )
                     slot_penalties[dname][slot]["gapStudent"] += p
-                    slot_penalty_details[dname][slot].append({"name": sname, "type": "gapStudent", "amount": p})
+                    slot_penalty_details[dname][slot].append(
+                        {"name": sname, "type": "gapStudent", "amount": p}
+                    )
                 if student_state[sname][dname][slot] == "class":
                     stud_count[sname] += 1
-                    val_idx = min(len(student_streak_list) - 1, stud_count[sname] - 1) if student_streak_list else -1
+                    val_idx = (
+                        min(len(student_streak_list) - 1, stud_count[sname] - 1)
+                        if student_streak_list
+                        else -1
+                    )
                     if val_idx >= 0:
                         pen = student_streak_list[val_idx]
                         if pen:
-                            amount = pen * student_importance[sname] * student_size.get(sname, 1)
+                            amount = (
+                                pen
+                                * student_importance[sname]
+                                * student_size.get(sname, 1)
+                            )
                             slot_penalties[dname][slot]["studentLessonStreak"] += amount
-                            slot_penalty_details[dname][slot].append({"name": sname, "type": "studentLessonStreak", "amount": amount})
+                            slot_penalty_details[dname][slot].append(
+                                {
+                                    "name": sname,
+                                    "type": "studentLessonStreak",
+                                    "amount": amount,
+                                }
+                            )
                 else:
                     stud_count[sname] = 0
 
@@ -1303,15 +1344,15 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
                         * teacher_as_students
                     )
                     slot_penalties[dname][slot]["unoptimalSlot"] += p
-                    slot_penalty_details[dname][slot].append({"name": t, "type": "unoptimalSlot", "amount": p})
-                for sname in cls["students"]:
-                    p = (
-                        base
-                        * student_importance[sname]
-                        * student_size.get(sname, 1)
+                    slot_penalty_details[dname][slot].append(
+                        {"name": t, "type": "unoptimalSlot", "amount": p}
                     )
+                for sname in cls["students"]:
+                    p = base * student_importance[sname] * student_size.get(sname, 1)
                     slot_penalties[dname][slot]["unoptimalSlot"] += p
-                    slot_penalty_details[dname][slot].append({"name": sname, "type": "unoptimalSlot", "amount": p})
+                    slot_penalty_details[dname][slot].append(
+                        {"name": sname, "type": "unoptimalSlot", "amount": p}
+                    )
 
     # penalties for consecutive classes
     avoid_default = defaults.get("avoidConsecutive", [True])[0]
@@ -1347,7 +1388,9 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
                             * teacher_as_students
                         )
                         slot_penalties[dname][slot]["consecutiveClass"] += p
-                        slot_penalty_details[dname][slot].append({"name": t, "type": "consecutiveClass", "amount": p})
+                        slot_penalty_details[dname][slot].append(
+                            {"name": t, "type": "consecutiveClass", "amount": p}
+                        )
 
     total_penalty = 0
     for day_map in slot_penalties.values():
@@ -1360,18 +1403,28 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
         slot_list = []
         for slot in day["slots"]:
             classes = schedule[name][slot]
-            gaps_students = [s for s in student_names if student_state[s][name][slot] == "gap"]
-            gaps_teachers = [t for t in teacher_names if teacher_state[t][name][slot] == "gap"]
-            home_students = [s for s in student_names if student_state[s][name][slot] == "home"]
-            home_teachers = [t for t in teacher_names if teacher_state[t][name][slot] == "home"]
-            slot_list.append({
-                "slotIndex": slot,
-                "classes": classes,
-                "gaps": {"students": gaps_students, "teachers": gaps_teachers},
-                "home": {"students": home_students, "teachers": home_teachers},
-                "penalty": slot_penalties[name][slot],
-                "penaltyDetails": slot_penalty_details[name][slot],
-            })
+            gaps_students = [
+                s for s in student_names if student_state[s][name][slot] == "gap"
+            ]
+            gaps_teachers = [
+                t for t in teacher_names if teacher_state[t][name][slot] == "gap"
+            ]
+            home_students = [
+                s for s in student_names if student_state[s][name][slot] == "home"
+            ]
+            home_teachers = [
+                t for t in teacher_names if teacher_state[t][name][slot] == "home"
+            ]
+            slot_list.append(
+                {
+                    "slotIndex": slot,
+                    "classes": classes,
+                    "gaps": {"students": gaps_students, "teachers": gaps_teachers},
+                    "home": {"students": home_students, "teachers": home_teachers},
+                    "penalty": slot_penalties[name][slot],
+                    "penaltyDetails": slot_penalty_details[name][slot],
+                }
+            )
         export["days"].append({"name": name, "slots": slot_list})
     export["totalPenalty"] = total_penalty
 
@@ -1411,7 +1464,12 @@ def analyse_subjects(schedule: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str,
     """Collect information about subjects."""
     student_size = {s["name"]: int(s.get("group", 1)) for s in cfg.get("students", [])}
     subjects = defaultdict(
-        lambda: {"students": set(), "student_count": 0, "teachers": set(), "class_sizes": []}
+        lambda: {
+            "students": set(),
+            "student_count": 0,
+            "teachers": set(),
+            "class_sizes": [],
+        }
     )
     for day in schedule.get("days", []):
         for slot in day.get("slots", []):
@@ -1444,10 +1502,12 @@ def _split_two_parts(name: str, max_len: int = 12) -> tuple[str, str]:
         idx = left
     else:
         idx = left if half - left <= right - half else right
-    return name[:idx], name[idx + 1:]
+    return name[:idx], name[idx + 1 :]
 
 
-def _format_table(rows, header_top=None, header_bottom=None, center_mask=None, join_rows=False):
+def _format_table(
+    rows, header_top=None, header_bottom=None, center_mask=None, join_rows=False
+):
     """Return simple ASCII table formatted as text."""
     col_count = max(len(r) for r in rows) if rows else 0
     if header_top:
@@ -1508,12 +1568,16 @@ def _teacher_table(teachers, teacher_names, subject_names):
     def teacher_hours(info):
         return sum(len(c) for c in info["subjects"].values())
 
-    for tid, info in sorted(teachers.items(), key=lambda x: teacher_hours(x[1]), reverse=True):
+    for tid, info in sorted(
+        teachers.items(), key=lambda x: teacher_hours(x[1]), reverse=True
+    ):
         name1, name2 = _split_two_parts(teacher_names.get(tid, tid))
         total_hours = teacher_hours(info)
         row_top = [name1]
         row_bottom = [name2]
-        subj_stats = sorted(info["subjects"].items(), key=lambda x: len(x[1]), reverse=True)
+        subj_stats = sorted(
+            info["subjects"].items(), key=lambda x: len(x[1]), reverse=True
+        )
         for sid, counts in subj_stats:
             row_top.append(subject_names.get(sid, sid))
             avg_s = mean(counts) if counts else 0
@@ -1533,21 +1597,30 @@ def _teacher_table(teachers, teacher_names, subject_names):
 
 def _student_list(students, student_names, subject_names):
     lines = []
-    for sid, subj_map in sorted(students.items(), key=lambda x: sum(x[1].values()), reverse=True):
+    for sid, subj_map in sorted(
+        students.items(), key=lambda x: sum(x[1].values()), reverse=True
+    ):
         name = student_names.get(sid, sid)
         subj_count = len(subj_map)
         total_hours = sum(subj_map.values())
         parts = []
-        for sub_id, hours in sorted(subj_map.items(), key=lambda x: subject_names.get(x[0], x[0])):
+        for sub_id, hours in sorted(
+            subj_map.items(), key=lambda x: subject_names.get(x[0], x[0])
+        ):
             parts.append(f"{hours} hours {subject_names.get(sub_id, sub_id)}")
-        line = f"{name} has {subj_count} subjects for {total_hours} hours: " + ", ".join(parts)
+        line = (
+            f"{name} has {subj_count} subjects for {total_hours} hours: "
+            + ", ".join(parts)
+        )
         lines.append(line)
     return "\n".join(lines)
 
 
 def _subject_table(subjects, subject_names):
     rows = []
-    for sid, info in sorted(subjects.items(), key=lambda x: subject_names.get(x[0], x[0])):
+    for sid, info in sorted(
+        subjects.items(), key=lambda x: subject_names.get(x[0], x[0])
+    ):
         name = subject_names.get(sid, sid)
         total_students = info.get("student_count", len(info.get("students", [])))
         teachers_cnt = len(info["teachers"])
@@ -1568,7 +1641,9 @@ def report_analysis(schedule: Dict[str, Any], cfg: Dict[str, Any]) -> None:
         t["name"]: t.get("printName", t.get("name", t["name"]))
         for t in cfg.get("teachers", [])
     }
-    student_names = {s["name"]: s.get("name", s["name"]) for s in cfg.get("students", [])}
+    student_names = {
+        s["name"]: s.get("name", s["name"]) for s in cfg.get("students", [])
+    }
     subject_names = {
         sid: info.get("printName", info.get("name", sid))
         for sid, info in cfg.get("subjects", {}).items()
@@ -1609,14 +1684,18 @@ def render_schedule(schedule: Dict[str, Any], cfg: Dict[str, Any]) -> None:
             home_t = len(home.get("teachers", []))
             home_s = sum(student_size.get(n, 1) for n in home.get("students", []))
 
-            header = f"  Lesson {idx+1} [gap T:{gap_t} S:{gap_s} home T:{home_t} S:{home_s}]"
+            header = (
+                f"  Lesson {idx+1} [gap T:{gap_t} S:{gap_s} home T:{home_t} S:{home_s}]"
+            )
             if not classes:
                 print(f"{header}: --")
                 continue
             print(f"{header}:")
             for cls in classes:
                 subj = subject_names.get(cls["subject"], cls["subject"])
-                teacher = ", ".join(teacher_names.get(t, t) for t in cls.get("teachers", []))
+                teacher = ", ".join(
+                    teacher_names.get(t, t) for t in cls.get("teachers", [])
+                )
                 size = cls.get("size", len(cls.get("students", [])))
                 length = cls.get("length", 1)
                 start = cls.get("start", idx)
@@ -2321,9 +2400,9 @@ buildStudents();
 """
     meta = ""
     if generated:
-        meta = f"<div class=\"meta\">Generated: {generated}"
+        meta = f'<div class="meta">Generated: {generated}'
         if include_config:
-            meta += " | <span id=\"show-config\" class=\"clickable\">View config</span>"
+            meta += ' | <span id="show-config" class="clickable">View config</span>'
         meta += "</div>"
     html = (
         html.replace("__SCHEDULE__", schedule_json)

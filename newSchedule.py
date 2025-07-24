@@ -1766,6 +1766,7 @@ body { font-family: Arial, sans-serif; }
 .hist-item { font-size:0.9em; color:#888; cursor:pointer; }
 .hist-item.active { font-weight:bold; color:#000; }
 .clickable { color:#0066cc; cursor:pointer; text-decoration:underline; }
+.sortable { cursor:pointer; }
 .slot-detail .slot-class{border-top:1px solid #ddd;padding:2px 0;}
 .slot-detail .slot-class:first-child{border-top:none;}
 .detail-line{display:flex;gap:6px;}
@@ -1930,6 +1931,8 @@ function showConfig(){
 const COLOR_MIN=[220,255,220];
 const COLOR_MID=[255,255,255];
 const COLOR_MAX=[255,220,220];
+const teacherSort={field:'penalty',asc:false};
+const studentSort={field:'penalty',asc:false};
 
 function buildTable(){
  const container=document.getElementById('table');
@@ -2179,8 +2182,9 @@ function computeTeacherInfo(name){
   avail+=allowed.size;
   });
   for(const k in subjects){subjects[k].avg=(subjects[k].size/subjects[k].count).toFixed(1);}
- const load=avail?Math.round(hours*100/avail):0;
- return{arrive,imp,penalty:pen/imp,hours:hours,time:time,load:load,subjects};
+ const load=avail?hours*100/avail:0;
+ const penVal=imp?pen/imp:0;
+ return{arrive,imp,penalty:penVal,hours:hours,time:time,load:load,subjects};
 }
 
 function computeStudentInfo(name){
@@ -2219,7 +2223,8 @@ function computeStudentInfo(name){
     }
   });});
 });
-return{arrive,imp,penalty:pen/imp,hours:hours,time:time,subjects};
+const penVal=imp?pen/imp:0;
+return{arrive,imp,penalty:penVal,hours:hours,time:time,subjects};
 }
 
 function buildTeachers(){
@@ -2227,15 +2232,40 @@ function buildTeachers(){
  cont.innerHTML='';
  const header=document.createElement('div');
  header.className='overview-header';
-  header.innerHTML='<span class="person-name">Teacher</span><span class="person-info">Priority<br>Arrive</span><span class="person-pen">Penalty</span><span class="person-hours">Hours</span><span class="person-time">At school</span><span class="person-load">Load %</span><span class="person-subjects">Subject<br>Cls | Avg</span>';
- cont.appendChild(header);
- const infos=(configData.teachers||[]).map(t=>{return{info:t,stat:computeTeacherInfo(t.name)}});
- infos.sort((a,b)=>b.stat.penalty-a.stat.penalty);
+  header.innerHTML='<span class="person-name">Teacher</span>'+
+    '<span class="person-info sortable" data-sort="priority">Priority<br>Arrive</span>'+
+    '<span class="person-pen sortable" data-sort="penalty">Penalty</span>'+
+    '<span class="person-hours sortable" data-sort="hours">Hours</span>'+
+    '<span class="person-time sortable" data-sort="time">At school</span>'+
+    '<span class="person-load sortable" data-sort="load">Load %</span>'+
+    '<span class="person-subjects">Subject<br>Cls | Avg</span>';
+  cont.appendChild(header);
+  header.querySelectorAll('.sortable').forEach(el=>{
+    el.onclick=()=>{
+      const field=el.dataset.sort;
+      if(teacherSort.field===field){teacherSort.asc=!teacherSort.asc;}else{teacherSort.field=field;teacherSort.asc=true;}
+      buildTeachers();
+    };
+  });
+  const infos=(configData.teachers||[]).map(t=>{return{info:t,stat:computeTeacherInfo(t.name)}});
+ infos.sort((a,b)=>{
+   let av, bv;
+   switch(teacherSort.field){
+     case 'priority': av=a.stat.imp; bv=b.stat.imp; break;
+     case 'hours': av=a.stat.hours; bv=b.stat.hours; break;
+     case 'time': av=a.stat.time; bv=b.stat.time; break;
+     case 'load': av=a.stat.load; bv=b.stat.load; break;
+     default: av=a.stat.penalty; bv=b.stat.penalty;
+   }
+   if(av<bv) return teacherSort.asc?-1:1;
+   if(av>bv) return teacherSort.asc?1:-1;
+   return 0;
+ });
   infos.forEach(item=>{
    const row=document.createElement('div');
    row.className='overview-row';
-   const arr=item.stat.arrive?"yes":"no";
-   const pr=item.info.importance!==undefined?item.info.importance:(configData.defaults.teacherImportance||[1])[0];
+  const arr=item.stat.arrive?"yes":"no";
+  const pr=item.stat.imp;
    let subjHtml='';
    Object.keys(item.stat.subjects).forEach(sid=>{
      const s=item.stat.subjects[sid];
@@ -2249,7 +2279,7 @@ function buildTeachers(){
     '<span class="person-pen">'+item.stat.penalty.toFixed(1)+'</span>'+
     '<span class="person-hours">'+item.stat.hours+'</span>'+
     '<span class="person-time">'+item.stat.time+'</span>'+
-    '<span class="person-load">'+item.stat.load+'</span>'+
+    '<span class="person-load">'+item.stat.load.toFixed(1)+'</span>'+
     '<span class="person-subjects"><div class="subject-list">'+subjHtml+'</div></span>';
    cont.appendChild(row);
   });
@@ -2260,15 +2290,38 @@ function buildStudents(){
  cont.innerHTML='';
  const header=document.createElement('div');
  header.className='overview-header';
-  header.innerHTML='<span class="person-name">Student</span><span class="person-info">Priority<br>Arrive</span><span class="person-pen">Penalty</span><span class="person-hours">Hours</span><span class="person-time">At school</span><span class="person-subjects">Subject<br>Cls | Pen</span>';
- cont.appendChild(header);
- const infos=(configData.students||[]).map(s=>{return{info:s,stat:computeStudentInfo(s.name)}});
- infos.sort((a,b)=>b.stat.penalty-a.stat.penalty);
+  header.innerHTML='<span class="person-name">Student</span>'+
+    '<span class="person-info sortable" data-sort="priority">Priority<br>Arrive</span>'+
+    '<span class="person-pen sortable" data-sort="penalty">Penalty</span>'+
+    '<span class="person-hours sortable" data-sort="hours">Hours</span>'+
+    '<span class="person-time sortable" data-sort="time">At school</span>'+
+    '<span class="person-subjects">Subject<br>Cls | Pen</span>';
+  cont.appendChild(header);
+  header.querySelectorAll('.sortable').forEach(el=>{
+    el.onclick=()=>{
+      const field=el.dataset.sort;
+      if(studentSort.field===field){studentSort.asc=!studentSort.asc;}else{studentSort.field=field;studentSort.asc=true;}
+      buildStudents();
+    };
+  });
+  const infos=(configData.students||[]).map(s=>{return{info:s,stat:computeStudentInfo(s.name)}});
+ infos.sort((a,b)=>{
+   let av,bv;
+   switch(studentSort.field){
+     case 'priority': av=a.stat.imp; bv=b.stat.imp; break;
+     case 'hours': av=a.stat.hours; bv=b.stat.hours; break;
+     case 'time': av=a.stat.time; bv=b.stat.time; break;
+     default: av=a.stat.penalty; bv=b.stat.penalty;
+   }
+   if(av<bv) return studentSort.asc?-1:1;
+   if(av>bv) return studentSort.asc?1:-1;
+   return 0;
+ });
   infos.forEach(item=>{
    const row=document.createElement('div');
    row.className='overview-row';
-   const arr=item.stat.arrive?"yes":"no";
-   const pr=item.info.importance!==undefined?item.info.importance:(configData.defaults.studentImportance||[0])[0];
+  const arr=item.stat.arrive?"yes":"no";
+  const pr=item.stat.imp;
    let subjHtml='';
    Object.keys(item.stat.subjects).forEach(sid=>{
      const s=item.stat.subjects[sid];
@@ -2310,7 +2363,7 @@ function showTeacher(idx,fromModal=false){
   ['Arrive early',full.arrive?'yes':'no',boldArr],
   ['Gap hours',stats.gap],
   ['At school',stats.time],
-  ['Load %',full.load],
+  ['Load %',full.load.toFixed(1)],
   ['Total classes',stats.totalClasses],
   ['Average size',stats.avgSize],
   ['Penalty',full.penalty.toFixed(1)]

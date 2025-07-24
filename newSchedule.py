@@ -472,11 +472,20 @@ def build_fast_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, 
                 cab_choices = [
                     c
                     for c in allowed_cabs
-                    if c in cabinets and cabinets[c]["capacity"] >= size
+                    if c in cabinets
+                    and (
+                        not cabinets[c].get("allowedSubjects")
+                        or sid in cabinets[c]["allowedSubjects"]
+                    )
                 ]
                 if len(cab_choices) < required_cabs:
                     raise ValueError(
                         f"Subject {sid} requires {required_cabs} cabinets but only {len(cab_choices)} available"
+                    )
+                caps = sorted((cabinets[c]["capacity"] for c in cab_choices), reverse=True)
+                if sum(caps[:required_cabs]) < size:
+                    raise ValueError(
+                        f"Available cabinets for {sid} cannot fit class size {size}"
                     )
                 vars_c = []
                 for c in cab_choices:

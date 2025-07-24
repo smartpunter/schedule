@@ -585,6 +585,8 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
             if fixed is not None:
                 var = model.NewBoolVar(f"x_{sid}_{idx}_{fixed['day']}_{fixed['start']}")
                 model.Add(var == 1)
+                for stu in enrolled:
+                    model.Add(var <= student_assumption[stu])
                 diff = abs(fixed["start"] - subj.get("optimalSlot", 0))
                 teachers_for_pen = (
                     fixed["teachers"]
@@ -638,10 +640,12 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                                 s in student_limits[stu][dname]
                                 for s in range(start, start + length)
                             )
-                            for stu in enrolled
+                        for stu in enrolled
                         ):
                             continue
                         var = model.NewBoolVar(f"x_{sid}_{idx}_{dname}_{start}")
+                        for stu in enrolled:
+                            model.Add(var <= student_assumption[stu])
                         diff = abs(start - subj.get("optimalSlot", 0))
                         stud_pen_map = {
                             s: diff
@@ -699,6 +703,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                         f"teach_{sid}_{idx}_{t}_{cand['day']}_{cand['start']}"
                     )
                     model.Add(tv <= cand["var"])
+                    model.Add(tv <= teacher_assumption[t])
                     if fixed is not None and fixed.get("teachers") is not None:
                         if t in fixed["teachers"]:
                             model.Add(tv == cand["var"])
@@ -805,9 +810,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
     for t, day_map in teacher_intervals.items():
         for ivs in day_map.values():
             if ivs:
-                model.AddNoOverlap([iv[0] for iv in ivs]).OnlyEnforceIf(
-                    teacher_assumption[t]
-                )
+                model.AddNoOverlap([iv[0] for iv in ivs])
     for c, day_map in cabinet_intervals.items():
         for ivs in day_map.values():
             if ivs:
@@ -815,9 +818,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
     for s, day_map in student_intervals.items():
         for ivs in day_map.values():
             if ivs:
-                model.AddNoOverlap([iv[0] for iv in ivs]).OnlyEnforceIf(
-                    student_assumption[s]
-                )
+                model.AddNoOverlap([iv[0] for iv in ivs])
 
     # build slot variables for teachers and students based on intervals
     teacher_slot = {}

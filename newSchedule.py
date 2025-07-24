@@ -2422,6 +2422,122 @@ buildStudents();
         fh.write(html)
 
 
+def diagnose_config(cfg: Dict[str, Any]) -> None:
+    """Print possible bottlenecks for finding a feasible schedule."""
+    days = cfg.get("days", [])
+    subjects = cfg.get("subjects", {})
+    teachers = cfg.get("teachers", [])
+    students = cfg.get("students", [])
+
+    # allowed slots for teachers
+    teacher_limits: Dict[str, Dict[str, Set[int]]] = {}
+    for t in teachers:
+        name = t["name"]
+        allow = t.get("allowedSlots")
+        forbid = t.get("forbiddenSlots")
+        avail: Dict[str, Set[int]] = {}
+        for day in days:
+            dname = day["name"]
+            slots_set = set(day["slots"])
+            if allow is not None:
+                if dname in allow:
+                    al = allow[dname]
+                    allowed = slots_set.copy() if not al else set(al)
+                else:
+                    allowed = set()
+            else:
+                allowed = slots_set.copy()
+            if forbid is not None and dname in forbid:
+                fb = forbid[dname]
+                if not fb:
+                    allowed = set()
+                else:
+                    allowed -= set(fb)
+            avail[dname] = allowed
+        teacher_limits[name] = avail
+
+    # allowed slots for students
+    student_limits: Dict[str, Dict[str, Set[int]]] = {}
+    for stu in students:
+        name = stu["name"]
+        allow = stu.get("allowedSlots")
+        forbid = stu.get("forbiddenSlots")
+        avail: Dict[str, Set[int]] = {}
+        for day in days:
+            dname = day["name"]
+            slots_set = set(day["slots"])
+            if allow is not None:
+                if dname in allow:
+                    al = allow[dname]
+                    allowed = slots_set.copy() if not al else set(al)
+                else:
+                    allowed = set()
+            else:
+                allowed = slots_set.copy()
+            if forbid is not None and dname in forbid:
+                fb = forbid[dname]
+                if not fb:
+                    allowed = set()
+                else:
+                    allowed -= set(fb)
+            avail[dname] = allowed
+        student_limits[name] = avail
+
+    teacher_hours_avail = {
+        t: sum(len(s) for s in day_map.values()) for t, day_map in teacher_limits.items()
+    }
+    student_hours_avail = {
+        s: sum(len(sl) for sl in day_map.values()) for s, day_map in student_limits.items()
+    }
+    teacher_map = {t["name"]: set(t.get("subjects", [])) for t in teachers}
+    subject_hours = {sid: sum(info.get("classes", [])) for sid, info in subjects.items()}
+
+    warnings = []
+
+    for sid, info in subjects.items():
+        required = int(info.get("requiredTeachers", 1))
+        t_list = [t for t in teacher_map if sid in teacher_map[t]]
+        if len(t_list) < required:
+            warnings.append(
+                f"Subject {sid} requires {required} teachers but only {len(t_list)} available."
+            )
+
+    teacher_hours_req = {t["name"]: 0.0 for t in teachers}
+    for sid, info in subjects.items():
+        hours = subject_hours.get(sid, 0) * int(info.get("requiredTeachers", 1))
+        t_list = [t for t in teacher_map if sid in teacher_map[t]]
+        if not t_list:
+            continue
+        share = hours / len(t_list)
+        for t in t_list:
+            teacher_hours_req[t] += share
+
+    for t in teachers:
+        name = t["name"]
+        req = teacher_hours_req[name]
+        avail = teacher_hours_avail.get(name, 0)
+        if req > avail:
+            warnings.append(
+                f"Teacher {name} may need ~{req:.1f} hours but only {avail} allowed."
+            )
+
+    for stu in students:
+        name = stu["name"]
+        need = sum(subject_hours.get(sid, 0) for sid in stu.get("subjects", []))
+        avail = student_hours_avail.get(name, 0)
+        if need > avail:
+            warnings.append(
+                f"Student {name} needs {need} hours but only {avail} allowed."
+            )
+
+    if warnings:
+        print("Potential issues:")
+        for w in warnings:
+            print(f" - {w}")
+    else:
+        print("No obvious issues detected.")
+
+
 def check_feasibility(cfg: Dict[str, Any]) -> bool:
     """Return True if a feasible schedule exists."""
     cfg_copy = copy.deepcopy(cfg)
@@ -2474,6 +2590,7 @@ def main() -> None:
                 return
 
     if obj_mode == "check":
+        diagnose_config(cfg)
         feasible = check_feasibility(cfg)
         if feasible:
             print(

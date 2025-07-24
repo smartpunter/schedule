@@ -867,27 +867,6 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
     )
 
     model = cp_model.CpModel()
-
-    # assumption variables to diagnose infeasibility
-    teacher_assumption = {
-        t: model.NewBoolVar(f"assume_teacher_{t}") for t in teacher_names
-    }
-    student_assumption = {
-        s["name"]: model.NewBoolVar(f"assume_student_{s['name']}") for s in students
-    }
-    subject_assumption = {
-        sid: model.NewBoolVar(f"assume_subject_{sid}") for sid in subjects
-    }
-    assumption_lookup: Dict[int, tuple] = {}
-    for name, var in teacher_assumption.items():
-        model.AddAssumption(var)
-        assumption_lookup[var.Index()] = ("Teacher", name)
-    for name, var in student_assumption.items():
-        model.AddAssumption(var)
-        assumption_lookup[var.Index()] = ("Student", name)
-    for name, var in subject_assumption.items():
-        model.AddAssumption(var)
-        assumption_lookup[var.Index()] = ("Subject", name)
     penalties = cfg.get("penalties", {})
     penalty_val = penalties.get("unoptimalSlot", [0])[0]
     gap_teacher_val = penalties.get("gapTeacher", [0])[0]
@@ -911,8 +890,6 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
 
     # candidate variables for each subject class (day/start only)
     candidates: Dict[tuple, List[Dict[str, Any]]] = {}
-    # store number of generated candidates for every class
-    candidate_counts: Dict[tuple, int] = {}
     # chosen day index for each class
     class_day_idx: Dict[tuple, cp_model.IntVar] = {}
     avoid_map = {
@@ -951,8 +928,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
             if fixed is not None:
                 var = model.NewBoolVar(f"x_{sid}_{idx}_{fixed['day']}_{fixed['start']}")
                 model.Add(var == 1)
-                for stu in enrolled:
-                    model.Add(var <= student_assumption[stu])
+                # candidate presence is fixed for predefined lessons
                 diff = abs(fixed["start"] - subj.get("optimalSlot", 0))
                 teachers_for_pen = (
                     fixed["teachers"]
@@ -1010,8 +986,6 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                         ):
                             continue
                         var = model.NewBoolVar(f"x_{sid}_{idx}_{dname}_{start}")
-                        for stu in enrolled:
-                            model.Add(var <= student_assumption[stu])
                         diff = abs(start - subj.get("optimalSlot", 0))
                         stud_pen_map = {
                             s: diff
@@ -1046,13 +1020,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
             if not cand_list:
                 raise RuntimeError(f"No slot for subject {sid} class {idx}")
             cand_list.sort(key=lambda c: c["penalty"])  # sort by penalty
-            model.Add(sum(c["var"] for c in cand_list) == 1).OnlyEnforceIf(
-                subject_assumption[sid]
-            )
-            for cand in cand_list:
-                model.Add(cand["var"] == 0).OnlyEnforceIf(
-                    subject_assumption[sid].Not()
-                )
+            model.Add(sum(c["var"] for c in cand_list) == 1)
             day_var = model.NewIntVar(0, len(days) - 1, f"day_idx_{sid}_{idx}")
             model.Add(day_var == sum(c["day_idx"] * c["var"] for c in cand_list))
             class_day_idx[key] = day_var
@@ -1069,7 +1037,6 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                         f"teach_{sid}_{idx}_{t}_{cand['day']}_{cand['start']}"
                     )
                     model.Add(tv <= cand["var"])
-                    model.Add(tv <= teacher_assumption[t])
                     if fixed is not None and fixed.get("teachers") is not None:
                         if t in fixed["teachers"]:
                             model.Add(tv == cand["var"])
@@ -1113,8 +1080,6 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                     f"int_{sid}_{idx}_{cand['day']}_{cand['start']}",
                 )
             candidates[key] = cand_list
-            # store how many placement options exist for this class
-            candidate_counts[key] = len(cand_list)
 
     obj_mode = settings.get("objective", ["total"])[0]
 
@@ -1205,7 +1170,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                     var = model.NewBoolVar(f"teach_{t}_{dname}_{slot}")
                     model.Add(var == 0)
                 if slot not in teacher_limits[t][dname]:
-                    model.Add(var == 0).OnlyEnforceIf(teacher_assumption[t])
+                    model.Add(var == 0)
                 teacher_slot[(t, dname, slot)] = var
 
             for stu in students:
@@ -1222,7 +1187,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                     var = model.NewBoolVar(f"stud_{sname}_{dname}_{slot}")
                     model.Add(var == 0)
                 if slot not in student_limits[sname][dname]:
-                    model.Add(var == 0).OnlyEnforceIf(student_assumption[sname])
+                    model.Add(var == 0)
                 student_slot[(sname, dname, slot)] = var
 
     # gap detection using simple before/after check
@@ -1474,21 +1439,6 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
     if status == cp_model.INFEASIBLE:
         print("No feasible schedule found. Diagnosing configuration...")
         diagnose_config(cfg)
-
-        print("Rendering assumptions...")
-
-        core = solver.SufficientAssumptionsForInfeasibility()
-        counts: Dict[tuple, int] = defaultdict(int)
-        for lit in core:
-            info = assumption_lookup.get(lit)
-            if info:
-                counts[info] += 1
-        if counts:
-            print("Unsatisfied assumptions:")
-            for (etype, name), cnt in sorted(counts.items(), key=lambda x: x[1], reverse=True)[:5]:
-                print(f"  {etype} {name}: {cnt}")
-        else:
-            print("Model infeasible but no assumptions identified.")
         raise RuntimeError("No feasible schedule found")
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         raise RuntimeError("No feasible schedule found")

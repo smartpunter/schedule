@@ -1806,38 +1806,37 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
     optional_stats: Dict[str, Dict[str, int | float]] = {}
     opt_pen_val = penalties_cfg.get("optionalSubjectMissing", 0)
-    if opt_pen_val:
-        for stu in cfg.get("students", []):
-            name = stu["name"]
-            opts = set(stu.get("optionalSubjects", []))
-            total_hours = 0
-            attended_hours = 0
-            for day in cfg["days"]:
-                dname = day["name"]
-                for slot in day["slots"]:
-                    for cls in schedule[dname][slot]:
-                        if slot != cls["start"]:
-                            continue
-                        sid = cls["subject"]
-                        if sid not in opts:
-                            continue
-                        length = cls["length"]
-                        total_hours += length
-                        if name in cls.get("students", []):
-                            attended_hours += length
-            missed_hours = total_hours - attended_hours
-            penalty = (
-                missed_hours
-                * opt_pen_val
-                * student_importance.get(name, def_student_imp)
-                * student_size.get(name, 1)
-            )
-            total_penalty += penalty
-            optional_stats[name] = {
-                "total": total_hours,
-                "attended": attended_hours,
-                "penalty": penalty,
-            }
+    for stu in cfg.get("students", []):
+        name = stu["name"]
+        opts = set(stu.get("optionalSubjects", []))
+        total_hours = 0
+        attended_hours = 0
+        for day in cfg["days"]:
+            dname = day["name"]
+            for slot in day["slots"]:
+                for cls in schedule[dname][slot]:
+                    if slot != cls["start"]:
+                        continue
+                    sid = cls["subject"]
+                    if sid not in opts:
+                        continue
+                    length = cls["length"]
+                    total_hours += length
+                    if name in cls.get("students", []):
+                        attended_hours += length
+        missed_hours = total_hours - attended_hours
+        penalty = (
+            missed_hours
+            * opt_pen_val
+            * student_importance.get(name, def_student_imp)
+            * student_size.get(name, 1)
+        )
+        total_penalty += penalty
+        optional_stats[name] = {
+            "total": total_hours,
+            "attended": attended_hours,
+            "penalty": penalty,
+        }
 
     export = {"days": []}
     for day in cfg["days"]:
@@ -1940,39 +1939,38 @@ def solve_fast(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
     optional_stats: Dict[str, Dict[str, int | float]] = {}
     opt_pen_val = cfg.get("penalties", {}).get("optionalSubjectMissing", [0])[0]
-    if opt_pen_val:
-        def_imp = cfg.get("defaults", {}).get("studentImportance", [0])[0]
-        importance = {
-            s["name"]: s.get("importance", def_imp) for s in cfg.get("students", [])
+    def_imp = cfg.get("defaults", {}).get("studentImportance", [0])[0]
+    importance = {
+        s["name"]: s.get("importance", def_imp) for s in cfg.get("students", [])
+    }
+    for stu in cfg.get("students", []):
+        name = stu["name"]
+        opts = set(stu.get("optionalSubjects", []))
+        total_hours = 0
+        attended_hours = 0
+        for day in cfg["days"]:
+            dname = day["name"]
+            for slot in day["slots"]:
+                for cls in schedule[dname][slot]:
+                    if slot != cls["start"] or cls["subject"] not in opts:
+                        continue
+                    length = cls["length"]
+                    total_hours += length
+                    if name in cls.get("students", []):
+                        attended_hours += length
+        missed_hours = total_hours - attended_hours
+        penalty = (
+            missed_hours
+            * opt_pen_val
+            * importance.get(name, def_imp)
+            * student_size.get(name, 1)
+        )
+        total_penalty += penalty
+        optional_stats[name] = {
+            "total": total_hours,
+            "attended": attended_hours,
+            "penalty": penalty,
         }
-        for stu in cfg.get("students", []):
-            name = stu["name"]
-            opts = set(stu.get("optionalSubjects", []))
-            total_hours = 0
-            attended_hours = 0
-            for day in cfg["days"]:
-                dname = day["name"]
-                for slot in day["slots"]:
-                    for cls in schedule[dname][slot]:
-                        if slot != cls["start"] or cls["subject"] not in opts:
-                            continue
-                        length = cls["length"]
-                        total_hours += length
-                        if name in cls.get("students", []):
-                            attended_hours += length
-            missed_hours = total_hours - attended_hours
-            penalty = (
-                missed_hours
-                * opt_pen_val
-                * importance.get(name, def_imp)
-                * student_size.get(name, 1)
-            )
-            total_penalty += penalty
-            optional_stats[name] = {
-                "total": total_hours,
-                "attended": attended_hours,
-                "penalty": penalty,
-            }
 
     export = {"days": []}
     for day in cfg["days"]:

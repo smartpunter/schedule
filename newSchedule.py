@@ -1507,6 +1507,7 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
     # configuration parameters referenced later in the function
     settings = cfg.get("settings", {})
     teacher_as_students = settings.get("teacherAsStudents", [15])[0]
+    duplicates_pen_val = settings.get("duplicatesPenalty", [0])[0]
 
     penalties = cfg.get("penalties", {})
     teacher_streak_list = penalties.get("teacherLessonStreak", [[]])[0]

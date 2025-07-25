@@ -1809,47 +1809,33 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
     if opt_pen_val:
         for stu in cfg.get("students", []):
             name = stu["name"]
-            opts = stu.get("optionalSubjects", [])
-            missed = 0
-            for sid in opts:
-                found = False
-                for day in cfg["days"]:
-                    dname = day["name"]
-                    for slot in day["slots"]:
-                        for cls in schedule[dname][slot]:
-                            if slot != cls["start"]:
-                                continue
-                            if cls["subject"] != sid:
-                                continue
-                            length = cls["length"]
-                            chk = [slot]
-                            if length > 1:
-                                chk.append(slot + length - 1)
-                            for s in chk:
-                                if (
-                                    s in student_limits[name][dname]
-                                    and student_state[name][dname][s] != "class"
-                                ):
-                                    found = True
-                                    break
-                            if found:
-                                break
-                        if found:
-                            break
-                    if found:
-                        break
-                if not found:
-                    missed += 1
+            opts = set(stu.get("optionalSubjects", []))
+            total_hours = 0
+            attended_hours = 0
+            for day in cfg["days"]:
+                dname = day["name"]
+                for slot in day["slots"]:
+                    for cls in schedule[dname][slot]:
+                        if slot != cls["start"]:
+                            continue
+                        sid = cls["subject"]
+                        if sid not in opts:
+                            continue
+                        length = cls["length"]
+                        total_hours += length
+                        if name in cls.get("students", []):
+                            attended_hours += length
+            missed_hours = total_hours - attended_hours
             penalty = (
-                missed
+                missed_hours
                 * opt_pen_val
                 * student_importance.get(name, def_student_imp)
                 * student_size.get(name, 1)
             )
             total_penalty += penalty
             optional_stats[name] = {
-                "total": len(opts),
-                "missed": missed,
+                "total": total_hours,
+                "attended": attended_hours,
                 "penalty": penalty,
             }
 
@@ -1956,38 +1942,37 @@ def solve_fast(cfg: Dict[str, Any]) -> Dict[str, Any]:
     opt_pen_val = cfg.get("penalties", {}).get("optionalSubjectMissing", [0])[0]
     if opt_pen_val:
         def_imp = cfg.get("defaults", {}).get("studentImportance", [0])[0]
-        importance = {s["name"]: s.get("importance", def_imp) for s in cfg.get("students", [])}
+        importance = {
+            s["name"]: s.get("importance", def_imp) for s in cfg.get("students", [])
+        }
         for stu in cfg.get("students", []):
             name = stu["name"]
-            opts = stu.get("optionalSubjects", [])
-            missed = 0
-            for sid in opts:
-                found = False
-                for day in cfg["days"]:
-                    dname = day["name"]
-                    for slot in day["slots"]:
-                        for cls in schedule[dname][slot]:
-                            if slot != cls["start"] or cls["subject"] != sid:
-                                continue
-                            length = cls["length"]
-                            chk = [slot]
-                            if length > 1:
-                                chk.append(slot + length - 1)
-                            for s in chk:
-                                if s in student_limits[name][dname] and s not in student_slots_map[name][dname]:
-                                    found = True
-                                    break
-                            if found:
-                                break
-                        if found:
-                            break
-                    if found:
-                        break
-                if not found:
-                    missed += 1
-            penalty = missed * opt_pen_val * importance.get(name, def_imp) * student_size.get(name, 1)
+            opts = set(stu.get("optionalSubjects", []))
+            total_hours = 0
+            attended_hours = 0
+            for day in cfg["days"]:
+                dname = day["name"]
+                for slot in day["slots"]:
+                    for cls in schedule[dname][slot]:
+                        if slot != cls["start"] or cls["subject"] not in opts:
+                            continue
+                        length = cls["length"]
+                        total_hours += length
+                        if name in cls.get("students", []):
+                            attended_hours += length
+            missed_hours = total_hours - attended_hours
+            penalty = (
+                missed_hours
+                * opt_pen_val
+                * importance.get(name, def_imp)
+                * student_size.get(name, 1)
+            )
             total_penalty += penalty
-            optional_stats[name] = {"total": len(opts), "missed": missed, "penalty": penalty}
+            optional_stats[name] = {
+                "total": total_hours,
+                "attended": attended_hours,
+                "penalty": penalty,
+            }
 
     export = {"days": []}
     for day in cfg["days"]:
@@ -2314,6 +2299,7 @@ body { font-family: Arial, sans-serif; }
 .schedule-grid .header { background:#f0f0f0; text-align:center; }
 .mini-grid { margin-top:10px; }
 .class-block { display:flex; flex-direction:column; margin-bottom:4px; }
+.class-block.optional{background:#e0f7ff;}
 .class-line { display:flex; gap:4px; width:100%; }
 .class-line span { flex:1; }
 .cls-subj { flex:0 0 50%; text-align:left; }
@@ -2581,7 +2567,7 @@ function buildTable(){
 cells.forEach(c=>{c.el.style.background=colorFor(c.val);});
 }
 
-function makeGrid(filterFn){
+function makeGrid(filterFn, highlightFn){
  const maxSlots=Math.max(...scheduleData.days.map(d=>d.slots.length?Math.max(...d.slots.map(s=>s.slotIndex)):0))+1;
  let html='<div class="schedule-grid mini-grid" style="grid-template-columns:auto repeat('+scheduleData.days.length+',1fr)">';
  html+='<div></div>';
@@ -2594,13 +2580,15 @@ function makeGrid(filterFn){
      const tDup={};
      const sDup={};
      slot.classes.forEach(c=>{(c.teachers||[]).forEach(t=>{tDup[t]=(tDup[t]||0)+1;});c.students.forEach(s=>{sDup[s]=(sDup[s]||0)+1;});});
-     slot.classes.filter(filterFn).forEach(cls=>{
+    slot.classes.filter(filterFn).forEach(cls=>{
+       const optional = highlightFn && highlightFn(cls);
        const subj=subjectDisplay[cls.subject]||cls.subject;
        const part=(cls.length>1)?((i-cls.start+1)+'/'+cls.length):'1/1';
        const tNames=(cls.teachers||[]).map(t=>teacherSpan(t,cls.subject,tDup[t]>1)).join(', ');
         const rooms=(cls.cabinets||[]).map(c=>cabinetSpan(c)).join(', ');
         const subjCls='cls-subj clickable subject'+(cls.students.some(s=>sDup[s]>1)?' dup-subject':'');
-        html+='<div class="class-block">'+
+        const blockCls='class-block'+(optional?' optional':'');
+        html+='<div class="'+blockCls+'">'+
          '<div class="class-line">'+
           '<span class="'+subjCls+'" data-id="'+cls.subject+'">'+subj+'</span>'+
           '<span class="cls-room">'+rooms+'</span>'+
@@ -2781,7 +2769,7 @@ function computeStudentInfo(name){
  const arrive=info.arriveEarly!==undefined?info.arriveEarly:defArr;
  const imp=info.importance!==undefined?info.importance:defImp;
  let hours=0,gap=0,time=0,subjects={},pen=0,dup=0;
- const optStats=(scheduleData.optionalStats||{})[name]||{total:0,missed:0,penalty:0};
+ const optStats=(scheduleData.optionalStats||{})[name]||{total:0,attended:0,penalty:0};
  scheduleData.days.forEach(day=>{
    const slots=day.slots;
    const dayStart=slots.length?slots[0].slotIndex:0;
@@ -2816,7 +2804,7 @@ function computeStudentInfo(name){
 });
 pen+=optStats.penalty;
 const penVal=imp?pen/imp:0;
-return{arrive,imp,penalty:penVal,hours:hours,time:time,subjects,duplicates:dup,optGot:optStats.total-optStats.missed,optMiss:optStats.missed};
+return{arrive,imp,penalty:penVal,hours:hours,time:time,subjects,duplicates:dup,optGot:optStats.attended,optMiss:optStats.total};
 }
 
 function buildTeachers(){
@@ -2891,7 +2879,7 @@ function buildStudents(){
     '<span class="person-dup sortable" data-sort="duplicates">Dup</span>'+
     '<span class="person-hours sortable" data-sort="hours">Hours</span>'+
     '<span class="person-time sortable" data-sort="time">At school</span>'+
-    '<span class="person-opt">Opt</span>'+
+    '<span class="person-opt">Optional subjects</span>'+
     '<span class="person-subjects">Subject<br>Cls | Pen</span>';
   cont.appendChild(header);
   header.querySelectorAll('.sortable').forEach(el=>{
@@ -2985,11 +2973,15 @@ function showStudent(idx,fromModal=false){
  const full=computeStudentInfo(name);
  const defArr=(configData.defaults.studentArriveEarly||[true])[0];
  const boldArr=full.arrive!==defArr;
-let html='<h2>Student: '+name+'</h2>'+makeGrid(cls=>cls.students.includes(name));
+ const optionalSubjects=info.optionalSubjects||[];
+ let html='<h2>Student: '+name+'</h2>'+makeGrid(cls=>cls.students.includes(name),cls=>optionalSubjects.includes(cls.subject));
  html+='<h3>Subjects</h3><table class="info-table"><tr><th>Subject</th><th>Classes</th><th>Penalty</th></tr>';
 Object.keys(full.subjects).forEach(sid=>{const s=full.subjects[sid];const sn=subjectDisplay[sid]||sid;html+='<tr><td><span class="clickable subject" data-id="'+sid+'">'+sn+'</span></td><td class="num">'+s.count+'</td><td class="num">'+(s.penalty||0).toFixed(1)+'</td></tr>';});
  html+='</table>';
- const params=[
+ if(optionalSubjects.length){
+   html+='<h3>Optional subjects</h3><p>'+optionalSubjects.map(s=>subjectDisplay[s]||s).join(', ')+'</p>';
+ }
+const params=[
  ['Group size',group,boldGroup],
  ['Priority',imp,boldImp],
  ['Arrive early',full.arrive?'yes':'no',boldArr],

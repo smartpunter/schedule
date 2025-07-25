@@ -19,7 +19,8 @@
     "unoptimalSlot": [1, "Penalty for each slot away from the preferred time of a subject. Larger value pushes classes toward their optimal slot."],
     "consecutiveClass": [10, "Penalty when a subject appears on consecutive days. High value spreads classes apart."],
     "teacherLessonStreak": [[0,0,0,10,50,100,200,500], "Penalty depending on how many lessons in a row a teacher has."],
-    "studentLessonStreak": [[0,0,0,10,50,100,200,500], "Penalty depending on consecutive lessons for a student."]
+    "studentLessonStreak": [[0,0,0,10,50,100,200,500], "Penalty depending on consecutive lessons for a student."],
+    "optionalSubjectMissing": [1000, "Penalty per hour when a student cannot attend an optional subject"]
   },
 
   "days": [
@@ -74,6 +75,7 @@
     {
       "name": "Mike",
       "subjects": ["DP1_English_Literature_SL", "DP1_Mathematics_HL"],
+      "optionalSubjects": ["DP1_Chemistry_SL"],
       "allowedSlots": { "Monday": [], "Wednesday": [0,1,2,3] }
     },
     {
@@ -86,6 +88,7 @@
       "importance": 30,
       "name": "John",
       "subjects": ["DP1_Mathematics_HL", "DP1_Chemistry_HL"],
+      "optionalSubjects": ["DP1_English_Literature_SL"],
       "allowedSlots": { "Monday": [], "Tuesday": [] },
       "forbiddenSlots": { "Monday": [0,1] }
     },

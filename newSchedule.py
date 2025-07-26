@@ -308,28 +308,35 @@ def _assign_optional(
         for slot in day["slots"]:
             for cls in schedule[dname][slot]:
                 sid = cls["subject"]
-                if slot == cls["start"]:
-                    length = cls["length"]
-                    for stu in students:
-                        name = stu["name"]
-                        if sid in stu.get("optionalSubjects", []):
-                            subj = stats[name]["subjects"].setdefault(
-                                sid, {"total": 0, "attended": 0}
-                            )
-                            subj["total"] += length
-                            stats[name]["total"] += length
+                if slot != cls["start"]:
+                    continue
+                length = cls["length"]
+                for stu in students:
+                    name = stu["name"]
+                    if sid in stu.get("optionalSubjects", []):
+                        subj = stats[name]["subjects"].setdefault(
+                            sid, {"total": 0, "attended": 0}
+                        )
+                        subj["total"] += length
+                        stats[name]["total"] += length
                 for stu in students:
                     name = stu["name"]
                     if sid not in stu.get("optionalSubjects", []):
                         continue
-                    if slot not in student_limits[name][dname]:
+                    if any(
+                        s not in student_limits[name][dname]
+                        for s in range(slot, slot + length)
+                    ):
                         continue
-                    if slot in taken[name][dname]:
+                    if any(
+                        s in taken[name][dname] for s in range(slot, slot + length)
+                    ):
                         continue
                     if name in cls.get("students", []):
                         continue
                     cls["students"].append(name)
-                    taken[name][dname].add(slot)
+                    for off in range(length):
+                        taken[name][dname].add(slot + off)
                     stats[name]["attended"] += 1
                     subj = stats[name]["subjects"].setdefault(
                         sid, {"total": 0, "attended": 0}
@@ -2511,6 +2518,7 @@ const COLOR_MID=[255,255,255];
 const COLOR_MAX=[255,220,220];
 const teacherSort={field:'penalty',asc:false};
 const studentSort={field:'penalty',asc:false};
+const duplicatesAllowed=((configData.settings||{}).duplicatesPenalty||[0])[0]>0;
 
 function buildTable(){
  const container=document.getElementById('table');
@@ -2835,15 +2843,19 @@ function buildTeachers(){
  const cont=document.getElementById('teachers');
  cont.innerHTML='';
  const header=document.createElement('div');
- header.className='overview-header';
-  header.innerHTML='<span class="person-name">Teacher</span>'+
+  header.className='overview-header';
+  let hHtml='<span class="person-name">Teacher</span>'+
     '<span class="person-info sortable" data-sort="priority">Priority<br>Arrive</span>'+
-    '<span class="person-pen sortable" data-sort="penalty">Penalty</span>'+
-    '<span class="person-dup sortable" data-sort="duplicates">Dup</span>'+
+    '<span class="person-pen sortable" data-sort="penalty">Penalty</span>';
+  if(duplicatesAllowed){
+    hHtml+='<span class="person-dup sortable" data-sort="duplicates">Dup</span>';
+  }
+  hHtml+=
     '<span class="person-hours sortable" data-sort="hours">Hours</span>'+
     '<span class="person-time sortable" data-sort="time">At school</span>'+
     '<span class="person-load sortable" data-sort="load">Load %</span>'+
     '<span class="person-subjects">Subject<br>Cls | Avg</span>';
+  header.innerHTML=hHtml;
   cont.appendChild(header);
   header.querySelectorAll('.sortable').forEach(el=>{
     el.onclick=()=>{
@@ -2880,14 +2892,18 @@ function buildTeachers(){
        '<span class="subject-count">'+s.count+'</span>'+
        '<span class="subject-extra">'+s.avg+'</span></div>';
    });
-  row.innerHTML='<span class="person-name clickable teacher" data-id="'+teacherIndex[item.info.name]+'">'+(teacherDisplay[item.info.name]||item.info.name)+'</span>'+
+  let rHtml='<span class="person-name clickable teacher" data-id="'+teacherIndex[item.info.name]+'">'+(teacherDisplay[item.info.name]||item.info.name)+'</span>'+
     '<span class="person-info">'+pr+'<br>'+arr+'</span>'+
-    '<span class="person-pen">'+item.stat.penalty.toFixed(1)+'</span>'+
-    '<span class="person-dup">'+item.stat.duplicates+'</span>'+
+    '<span class="person-pen">'+item.stat.penalty.toFixed(1)+'</span>';
+  if(duplicatesAllowed){
+    rHtml+='<span class="person-dup">'+item.stat.duplicates+'</span>';
+  }
+  rHtml+=
     '<span class="person-hours">'+item.stat.hours+'</span>'+
     '<span class="person-time">'+item.stat.time+'</span>'+
     '<span class="person-load">'+item.stat.load.toFixed(1)+'</span>'+
     '<span class="person-subjects"><div class="subject-list">'+subjHtml+'</div></span>';
+  row.innerHTML=rHtml;
    cont.appendChild(row);
   });
 }
@@ -2896,15 +2912,19 @@ function buildStudents(){
  const cont=document.getElementById('students');
  cont.innerHTML='';
  const header=document.createElement('div');
- header.className='overview-header';
-  header.innerHTML='<span class="person-name">Student</span>'+
+  header.className='overview-header';
+  let hHtml='<span class="person-name">Student</span>'+
     '<span class="person-info sortable" data-sort="priority">Priority<br>Arrive</span>'+
-    '<span class="person-pen sortable" data-sort="penalty">Penalty</span>'+
-    '<span class="person-dup sortable" data-sort="duplicates">Dup</span>'+
+    '<span class="person-pen sortable" data-sort="penalty">Penalty</span>';
+  if(duplicatesAllowed){
+    hHtml+='<span class="person-dup sortable" data-sort="duplicates">Dup</span>';
+  }
+  hHtml+=
     '<span class="person-hours sortable" data-sort="hours">Hours</span>'+
     '<span class="person-time sortable" data-sort="time">At school</span>'+
     '<span class="person-opt">Optional subjects</span>'+
     '<span class="person-subjects">Subject<br>Cls | Pen</span>';
+  header.innerHTML=hHtml;
   cont.appendChild(header);
   header.querySelectorAll('.sortable').forEach(el=>{
     el.onclick=()=>{
@@ -2942,12 +2962,15 @@ infos.sort((a,b)=>{
    });
   row.innerHTML='<span class="person-name clickable student" data-id="'+studentIndex[item.info.name]+'">'+item.info.name+'</span>'+
     '<span class="person-info">'+pr+'<br>'+arr+'</span>'+
-    '<span class="person-pen">'+item.stat.penalty.toFixed(1)+'</span>'+
-    '<span class="person-dup">'+item.stat.duplicates+'</span>'+
+    '<span class="person-pen">'+item.stat.penalty.toFixed(1)+'</span>';
+  if(duplicatesAllowed){
+    row.innerHTML+= '<span class="person-dup">'+item.stat.duplicates+'</span>';
+  }
+  row.innerHTML+=
     '<span class="person-hours">'+item.stat.hours+'</span>'+
     '<span class="person-time">'+item.stat.time+'</span>'+
     '<span class="person-opt">'+item.stat.optGot+'/'+item.stat.optMiss+'</span>'+
-    '<span class="person-subjects"><div class="subject-list">'+subjHtml+'</div></span>'; 
+    '<span class="person-subjects"><div class="subject-list">'+subjHtml+'</div></span>';
    cont.appendChild(row);
   });
 }
@@ -2970,17 +2993,19 @@ function showTeacher(idx,fromModal=false){
    const sname=subjectDisplay[sid]||sid;
    html+='<tr><td><span class="clickable subject" data-id="'+sid+'">'+sname+'</span></td><td class="num">'+s.count+'</td><td class="num">'+s.avg+'</td></tr>';});
  html+='</table>';
- const params=[
-  ['Priority',imp,boldImp],
-  ['Arrive early',full.arrive?'yes':'no',boldArr],
-  ['Gap hours',stats.gap],
-  ['At school',stats.time],
-  ['Load %',full.load.toFixed(1)],
-  ['Total classes',stats.totalClasses],
-  ['Average size',stats.avgSize],
-  ['Duplicates',full.duplicates],
-  ['Penalty',full.penalty.toFixed(1)]
-];
+  const params=[
+   ['Priority',imp,boldImp],
+   ['Arrive early',full.arrive?'yes':'no',boldArr],
+   ['Gap hours',stats.gap],
+   ['At school',stats.time],
+   ['Load %',full.load.toFixed(1)],
+   ['Total classes',stats.totalClasses],
+   ['Average size',stats.avgSize],
+   ['Penalty',full.penalty.toFixed(1)]
+  ];
+  if(duplicatesAllowed){
+    params.splice(params.length-1,0,['Duplicates',full.duplicates]);
+  }
  html+='<h3>Configuration</h3>'+makeParamTable(params);
  openModal(html,!fromModal);
 }
@@ -3011,15 +3036,17 @@ Object.keys(full.subjects).forEach(sid=>{const s=full.subjects[sid];const sn=sub
    });
    html+='</table>';
  }
-const params=[
- ['Group size',group,boldGroup],
- ['Priority',imp,boldImp],
- ['Arrive early',full.arrive?'yes':'no',boldArr],
- ['Gap hours',stats.gap],
- ['At school',stats.time],
- ['Duplicates',full.duplicates],
- ['Penalty',full.penalty.toFixed(1)]
-];
+  const params=[
+   ['Group size',group,boldGroup],
+   ['Priority',imp,boldImp],
+   ['Arrive early',full.arrive?'yes':'no',boldArr],
+   ['Gap hours',stats.gap],
+   ['At school',stats.time],
+   ['Penalty',full.penalty.toFixed(1)]
+  ];
+  if(duplicatesAllowed){
+    params.splice(params.length-1,0,['Duplicates',full.duplicates]);
+  }
  html+='<h3>Configuration</h3>'+makeParamTable(params);
  openModal(html,!fromModal);
 }

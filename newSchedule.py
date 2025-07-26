@@ -349,6 +349,27 @@ def _assign_optional(
     return stats
 
 
+def _deduplicate_schedule(schedule: Dict[str, Dict[int, List[Dict[str, Any]]]]) -> None:
+    """Remove duplicate class entries from each schedule slot."""
+    for day_slots in schedule.values():
+        for slot, classes in day_slots.items():
+            unique = []
+            seen = set()
+            for cls in classes:
+                key = (
+                    cls.get("subject"),
+                    tuple(sorted(cls.get("teachers", []))),
+                    tuple(sorted(cls.get("cabinets", []))),
+                    cls.get("start"),
+                    cls.get("length"),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                unique.append(cls)
+            day_slots[slot] = unique
+
+
 
 
 def build_fast_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]]]:
@@ -1603,6 +1624,7 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
     """Generate schedule and wrap it in export format."""
     schedule = build_model(cfg)
     optional_info = _assign_optional(schedule, cfg)
+    _deduplicate_schedule(schedule)
 
     teacher_names = [t["name"] for t in cfg.get("teachers", [])]
     student_names = [s["name"] for s in cfg.get("students", [])]
@@ -1957,6 +1979,7 @@ def solve_fast(cfg: Dict[str, Any]) -> Dict[str, Any]:
     """Solve using the simplified model and compute total penalty."""
     schedule = build_fast_model(cfg)
     optional_info = _assign_optional(schedule, cfg)
+    _deduplicate_schedule(schedule)
 
     teacher_names = [t["name"] for t in cfg.get("teachers", [])]
     student_names = [s["name"] for s in cfg.get("students", [])]

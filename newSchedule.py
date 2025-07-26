@@ -298,6 +298,8 @@ def _assign_optional(
         dname = day["name"]
         for slot in day["slots"]:
             for cls in schedule[dname][slot]:
+                if slot != cls.get("start"):
+                    continue
                 length = cls.get("length", 1)
                 for st in cls.get("students", []):
                     for off in range(length):
@@ -345,6 +347,8 @@ def _assign_optional(
                     )
                     subj["attended"] += 1
     return stats
+
+
 
 
 def build_fast_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]]]:
@@ -698,18 +702,17 @@ def build_fast_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, 
         dname = days[day_idx]["name"]
         teachers_assigned = [t for t, v in info["teachers"].items() if solver.Value(v)]
         cabinets_assigned = [c for c, v in info["cabinets"].items() if solver.Value(v)]
+        cls_obj = {
+            "subject": key[0],
+            "teachers": teachers_assigned,
+            "cabinets": cabinets_assigned,
+            "students": info["students"],
+            "size": info["size"],
+            "start": start,
+            "length": length,
+        }
         for s in range(start, start + length):
-            schedule[dname][s].append(
-                {
-                    "subject": key[0],
-                    "teachers": teachers_assigned,
-                    "cabinets": cabinets_assigned,
-                    "students": info["students"],
-                    "size": info["size"],
-                    "start": start,
-                    "length": length,
-                }
-            )
+            schedule[dname][s].append(cls_obj)
 
     return schedule
 
@@ -1581,18 +1584,17 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                 assigned_teachers = [
                     t for t, tv in c.get("teacher_pres", {}).items() if solver.Value(tv)
                 ]
+                cls_obj = {
+                    "subject": sid,
+                    "teachers": assigned_teachers,
+                    "cabinets": selected_cabs,
+                    "students": c["students"],
+                    "size": c["size"],
+                    "start": c["start"],
+                    "length": c["length"],
+                }
                 for s in range(c["start"], c["start"] + c["length"]):
-                    schedule[c["day"]][s].append(
-                        {
-                            "subject": sid,
-                            "teachers": assigned_teachers,
-                            "cabinets": selected_cabs,
-                            "students": c["students"],
-                            "size": c["size"],
-                            "start": c["start"],
-                            "length": c["length"],
-                        }
-                    )
+                    schedule[c["day"]][s].append(cls_obj)
 
     return schedule
 

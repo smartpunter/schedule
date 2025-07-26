@@ -298,8 +298,10 @@ def _assign_optional(
         dname = day["name"]
         for slot in day["slots"]:
             for cls in schedule[dname][slot]:
+                length = cls.get("length", 1)
                 for st in cls.get("students", []):
-                    taken[st][dname].add(slot)
+                    for off in range(length):
+                        taken[st][dname].add(slot + off)
 
     stats = {n: {"total": 0, "attended": 0, "subjects": {}} for n in student_names}
 

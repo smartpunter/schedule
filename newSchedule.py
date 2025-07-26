@@ -252,6 +252,92 @@ def _init_schedule(
     return schedule
 
 
+def _calc_student_limits(cfg: Dict[str, Any]) -> Dict[str, Dict[str, Set[int]]]:
+    """Return allowed slots for each student."""
+    limits: Dict[str, Dict[str, Set[int]]] = {}
+    days = cfg.get("days", [])
+    for stu in cfg.get("students", []):
+        name = stu["name"]
+        allow = stu.get("allowedSlots")
+        forbid = stu.get("forbiddenSlots")
+        avail: Dict[str, Set[int]] = {}
+        for day in days:
+            dname = day["name"]
+            slots_set = set(day["slots"])
+            if allow is not None:
+                if dname in allow:
+                    al = allow[dname]
+                    allowed = slots_set.copy() if not al else set(al)
+                else:
+                    allowed = set()
+            else:
+                allowed = slots_set.copy()
+            if forbid is not None and dname in forbid:
+                fb = forbid[dname]
+                if not fb:
+                    allowed = set()
+                else:
+                    allowed -= set(fb)
+            avail[dname] = allowed
+        limits[name] = avail
+    return limits
+
+
+def _assign_optional(
+    schedule: Dict[str, Dict[int, List[Dict[str, Any]]]],
+    cfg: Dict[str, Any],
+) -> Dict[str, Dict[str, Any]]:
+    """Assign optional classes and collect attendance statistics."""
+    students = cfg.get("students", [])
+    student_names = [s["name"] for s in students]
+    days = cfg.get("days", [])
+    student_limits = _calc_student_limits(cfg)
+
+    taken = {n: {d["name"]: set() for d in days} for n in student_names}
+    for day in days:
+        dname = day["name"]
+        for slot in day["slots"]:
+            for cls in schedule[dname][slot]:
+                for st in cls.get("students", []):
+                    taken[st][dname].add(slot)
+
+    stats = {n: {"total": 0, "attended": 0, "subjects": {}} for n in student_names}
+
+    for day in days:
+        dname = day["name"]
+        for slot in day["slots"]:
+            for cls in schedule[dname][slot]:
+                sid = cls["subject"]
+                if slot == cls["start"]:
+                    length = cls["length"]
+                    for stu in students:
+                        name = stu["name"]
+                        if sid in stu.get("optionalSubjects", []):
+                            subj = stats[name]["subjects"].setdefault(
+                                sid, {"total": 0, "attended": 0}
+                            )
+                            subj["total"] += length
+                            stats[name]["total"] += length
+                for stu in students:
+                    name = stu["name"]
+                    if sid not in stu.get("optionalSubjects", []):
+                        continue
+                    if slot not in student_limits[name][dname]:
+                        continue
+                    if slot in taken[name][dname]:
+                        continue
+                    if name in cls.get("students", []):
+                        continue
+                    cls["students"].append(name)
+                    taken[name][dname].add(slot)
+                    stats[name]["attended"] += 1
+                    subj = stats[name]["subjects"].setdefault(
+                        sid, {"total": 0, "attended": 0}
+                    )
+                    subj["attended"] += 1
+    return stats
+
+
 def build_fast_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]]]:
     """Build simplified schedule focusing on last lesson time."""
     days = cfg["days"]
@@ -1505,6 +1591,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
 def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
     """Generate schedule and wrap it in export format."""
     schedule = build_model(cfg)
+    optional_info = _assign_optional(schedule, cfg)
 
     teacher_names = [t["name"] for t in cfg.get("teachers", [])]
     student_names = [s["name"] for s in cfg.get("students", [])]
@@ -1808,23 +1895,8 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
     opt_pen_val = penalties_cfg.get("optionalSubjectMissing", 0)
     for stu in cfg.get("students", []):
         name = stu["name"]
-        opts = set(stu.get("optionalSubjects", []))
-        total_hours = 0
-        attended_hours = 0
-        for day in cfg["days"]:
-            dname = day["name"]
-            for slot in day["slots"]:
-                for cls in schedule[dname][slot]:
-                    if slot != cls["start"]:
-                        continue
-                    sid = cls["subject"]
-                    if sid not in opts:
-                        continue
-                    length = cls["length"]
-                    total_hours += length
-                    if name in cls.get("students", []):
-                        attended_hours += length
-        missed_hours = total_hours - attended_hours
+        info = optional_info.get(name, {"total": 0, "attended": 0, "subjects": {}})
+        missed_hours = info["total"] - info["attended"]
         penalty = (
             missed_hours
             * opt_pen_val
@@ -1832,11 +1904,8 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
             * student_size.get(name, 1)
         )
         total_penalty += penalty
-        optional_stats[name] = {
-            "total": total_hours,
-            "attended": attended_hours,
-            "penalty": penalty,
-        }
+        info["penalty"] = penalty
+        optional_stats[name] = info
 
     export = {"days": []}
     for day in cfg["days"]:
@@ -1876,6 +1945,7 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
 def solve_fast(cfg: Dict[str, Any]) -> Dict[str, Any]:
     """Solve using the simplified model and compute total penalty."""
     schedule = build_fast_model(cfg)
+    optional_info = _assign_optional(schedule, cfg)
 
     teacher_names = [t["name"] for t in cfg.get("teachers", [])]
     student_names = [s["name"] for s in cfg.get("students", [])]
@@ -1910,55 +1980,14 @@ def solve_fast(cfg: Dict[str, Any]) -> Dict[str, Any]:
             if val >= 0:
                 total_penalty += (val + 1) * weight
 
-    # compute allowed slots for students
-    student_limits: Dict[str, Dict[str, Set[int]]] = {}
-    for stu in cfg.get("students", []):
-        name = stu["name"]
-        allow = stu.get("allowedSlots")
-        forbid = stu.get("forbiddenSlots")
-        avail: Dict[str, Set[int]] = {}
-        for day in cfg["days"]:
-            dname = day["name"]
-            slots_set = set(day["slots"])
-            if allow is not None:
-                if dname in allow:
-                    al = allow[dname]
-                    allowed = slots_set.copy() if not al else set(al)
-                else:
-                    allowed = set()
-            else:
-                allowed = slots_set.copy()
-            if forbid is not None and dname in forbid:
-                fb = forbid[dname]
-                if not fb:
-                    allowed = set()
-                else:
-                    allowed -= set(fb)
-            avail[dname] = allowed
-        student_limits[name] = avail
-
     optional_stats: Dict[str, Dict[str, int | float]] = {}
     opt_pen_val = cfg.get("penalties", {}).get("optionalSubjectMissing", [0])[0]
     def_imp = cfg.get("defaults", {}).get("studentImportance", [0])[0]
-    importance = {
-        s["name"]: s.get("importance", def_imp) for s in cfg.get("students", [])
-    }
+    importance = {s["name"]: s.get("importance", def_imp) for s in cfg.get("students", [])}
     for stu in cfg.get("students", []):
         name = stu["name"]
-        opts = set(stu.get("optionalSubjects", []))
-        total_hours = 0
-        attended_hours = 0
-        for day in cfg["days"]:
-            dname = day["name"]
-            for slot in day["slots"]:
-                for cls in schedule[dname][slot]:
-                    if slot != cls["start"] or cls["subject"] not in opts:
-                        continue
-                    length = cls["length"]
-                    total_hours += length
-                    if name in cls.get("students", []):
-                        attended_hours += length
-        missed_hours = total_hours - attended_hours
+        info = optional_info.get(name, {"total": 0, "attended": 0, "subjects": {}})
+        missed_hours = info["total"] - info["attended"]
         penalty = (
             missed_hours
             * opt_pen_val
@@ -1966,11 +1995,8 @@ def solve_fast(cfg: Dict[str, Any]) -> Dict[str, Any]:
             * student_size.get(name, 1)
         )
         total_penalty += penalty
-        optional_stats[name] = {
-            "total": total_hours,
-            "attended": attended_hours,
-            "penalty": penalty,
-        }
+        info["penalty"] = penalty
+        optional_stats[name] = info
 
     export = {"days": []}
     for day in cfg["days"]:
@@ -2767,7 +2793,7 @@ function computeStudentInfo(name){
  const arrive=info.arriveEarly!==undefined?info.arriveEarly:defArr;
  const imp=info.importance!==undefined?info.importance:defImp;
  let hours=0,gap=0,time=0,subjects={},pen=0,dup=0;
- const optStats=(scheduleData.optionalStats||{})[name]||{total:0,attended:0,penalty:0};
+ const optStats=(scheduleData.optionalStats||{})[name]||{total:0,attended:0,penalty:0,subjects:{}};
  scheduleData.days.forEach(day=>{
    const slots=day.slots;
    const dayStart=slots.length?slots[0].slotIndex:0;
@@ -2802,7 +2828,7 @@ function computeStudentInfo(name){
 });
 pen+=optStats.penalty;
 const penVal=imp?pen/imp:0;
-return{arrive,imp,penalty:penVal,hours:hours,time:time,subjects,duplicates:dup,optGot:optStats.attended,optMiss:optStats.total};
+return{arrive,imp,penalty:penVal,hours:hours,time:time,subjects,duplicates:dup,optGot:optStats.attended,optMiss:optStats.total,optDetail:optStats.subjects||{}};
 }
 
 function buildTeachers(){
@@ -2977,7 +3003,13 @@ function showStudent(idx,fromModal=false){
 Object.keys(full.subjects).forEach(sid=>{const s=full.subjects[sid];const sn=subjectDisplay[sid]||sid;html+='<tr><td><span class="clickable subject" data-id="'+sid+'">'+sn+'</span></td><td class="num">'+s.count+'</td><td class="num">'+(s.penalty||0).toFixed(1)+'</td></tr>';});
  html+='</table>';
  if(optionalSubjects.length){
-   html+='<h3>Optional subjects</h3><p>'+optionalSubjects.map(s=>subjectDisplay[s]||s).join(', ')+'</p>';
+   html+='<h3>Optional subjects</h3><table class="info-table"><tr><th>Subject</th><th>Hours</th></tr>';
+   optionalSubjects.forEach(sid=>{
+     const st=full.optDetail[sid]||{attended:0,total:0};
+     const nameDisp=subjectDisplay[sid]||sid;
+     html+='<tr><td><span class="clickable subject" data-id="'+sid+'">'+nameDisp+'</span></td><td class="num">'+st.attended+'/'+st.total+'</td></tr>';
+   });
+   html+='</table>';
  }
 const params=[
  ['Group size',group,boldGroup],

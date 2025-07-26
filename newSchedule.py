@@ -512,7 +512,8 @@ def build_fast_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, 
         required_teachers = int(subj.get("requiredTeachers", 1))
         allowed_cabs = subj.get("cabinets", list(cabinets))
         required_cabs = int(subj.get("requiredCabinets", 1))
-        class_students = students_by_subject.get(sid, [])
+        # make a copy to prevent aliasing with global student lists
+        class_students = list(students_by_subject.get(sid, []))
         size = sum(student_size[s] for s in class_students)
         for idx, length in enumerate(class_lengths):
             key = (sid, idx)
@@ -645,7 +646,8 @@ def build_fast_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, 
                 "end_val": end_var,
                 "teachers": teacher_vars,
                 "cabinets": cabinet_vars,
-                "students": class_students,
+                # store copy of students to prevent modifications from affecting others
+                "students": list(class_students),
                 "size": size,
             }
 
@@ -727,7 +729,8 @@ def build_fast_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, 
             "subject": key[0],
             "teachers": teachers_assigned,
             "cabinets": cabinets_assigned,
-            "students": info["students"],
+            # copy to keep class attendance independent
+            "students": list(info["students"]),
             "size": info["size"],
             "start": start,
             "length": length,
@@ -1029,7 +1032,8 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
         allowed_teachers = subject_teachers.get(sid)
         if not allowed_teachers:
             raise ValueError(f"No teacher available for subject {sid}")
-        enrolled = students_by_subject.get(sid, [])
+        # copy so later optional assignments do not mutate the shared list
+        enrolled = list(students_by_subject.get(sid, []))
         class_size = sum(student_size[s] for s in enrolled)
         allowed_cabinets = [
             c
@@ -1079,7 +1083,8 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                         "start": fixed["start"],
                         "length": length,
                         "size": class_size,
-                        "students": enrolled,
+                        # store a copy to avoid mutating the source list later
+                        "students": list(enrolled),
                         "student_pen": stud_pen_map,
                         "teacher_pen": teach_pen_map,
                         "penalty": sum(stud_pen_map.values())
@@ -1137,7 +1142,8 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                                 "start": start,
                                 "length": length,
                                 "size": class_size,
-                                "students": enrolled,
+                                # copy to decouple from shared enrollment list
+                                "students": list(enrolled),
                                 "student_pen": stud_pen_map,
                                 "teacher_pen": teach_pen_map,
                                 "penalty": sum(stud_pen_map.values())
@@ -1609,7 +1615,8 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                     "subject": sid,
                     "teachers": assigned_teachers,
                     "cabinets": selected_cabs,
-                    "students": c["students"],
+                    # copy list so modifications for optional classes don't affect others
+                    "students": list(c["students"]),
                     "size": c["size"],
                     "start": c["start"],
                     "length": c["length"],

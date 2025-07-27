@@ -290,6 +290,7 @@ def _assign_optional(
     """Assign optional classes and collect attendance statistics."""
     students = cfg.get("students", [])
     student_names = [s["name"] for s in students]
+    student_size = {s["name"]: int(s.get("group", 1)) for s in students}
     days = cfg.get("days", [])
     student_limits = _calc_student_limits(cfg)
 
@@ -339,13 +340,15 @@ def _assign_optional(
                     if name in cls.get("students", []):
                         continue
                     cls["students"].append(name)
+                    cls.setdefault("optionalSize", 0)
+                    cls["optionalSize"] += student_size.get(name, 1)
                     for off in range(length):
                         taken[name][dname].add(slot + off)
-                    stats[name]["attended"] += 1
+                    stats[name]["attended"] += length
                     subj = stats[name]["subjects"].setdefault(
                         sid, {"total": 0, "attended": 0}
                     )
-                    subj["attended"] += 1
+                    subj["attended"] += length
     return stats
 
 
@@ -732,6 +735,7 @@ def build_fast_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, 
             # copy to keep class attendance independent
             "students": list(info["students"]),
             "size": info["size"],
+            "optionalSize": 0,
             "start": start,
             "length": length,
         }
@@ -1618,6 +1622,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                     # copy list so modifications for optional classes don't affect others
                     "students": list(c["students"]),
                     "size": c["size"],
+                    "optionalSize": 0,
                     "start": c["start"],
                     "length": c["length"],
                 }
@@ -2071,7 +2076,7 @@ def analyse_teachers(schedule: Dict[str, Any]) -> Dict[str, Any]:
         for slot in day.get("slots", []):
             for cls in slot.get("classes", []):
                 sid = cls["subject"]
-                count = cls.get("size", len(cls.get("students", [])))
+                count = cls.get("size", len(cls.get("students", []))) + cls.get("optionalSize", 0)
                 for tid in cls.get("teachers", []):
                     teachers[tid]["blocks"] += 1
                     teachers[tid]["students"].append(count)
@@ -2110,6 +2115,7 @@ def analyse_subjects(schedule: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str,
                     subjects[sid]["teachers"].add(tid)
                 subjects[sid]["class_sizes"].append(
                     cls.get("size", len(cls.get("students", [])))
+                    + cls.get("optionalSize", 0)
                 )
                 for stu in cls.get("students", []):
                     if stu not in subjects[sid]["students"]:
@@ -2327,14 +2333,17 @@ def render_schedule(schedule: Dict[str, Any], cfg: Dict[str, Any]) -> None:
                 teacher = ", ".join(
                     teacher_names.get(t, t) for t in cls.get("teachers", [])
                 )
-                size = cls.get("size", len(cls.get("students", [])))
+                base_size = cls.get("size", len(cls.get("students", [])))
+                opt_size = cls.get("optionalSize", 0)
+                size = base_size + opt_size
                 length = cls.get("length", 1)
                 start = cls.get("start", idx)
                 part = ""
                 if length > 1:
                     pno = idx - start + 1
                     part = f" (part {pno}/{length})"
-                print(f"    {subj} by {teacher} for {size} students, {length}h{part}")
+                size_str = f"{base_size}" + (f" + {opt_size}" if opt_size else "")
+                print(f"    {subj} by {teacher} for {size_str} students, {length}h{part}")
         print()
 
 
@@ -2592,8 +2601,9 @@ function buildTable(){
       const l2=document.createElement('div');
       l2.className='class-line';
       const tNames=(cls.teachers||[]).map(t=>teacherSpan(t,cls.subject,tDup[t]>1)).join(', ');
+      const sizeStr=cls.optionalSize?cls.size+' + '+cls.optionalSize:cls.size; 
       l2.innerHTML='<span class="cls-teach">'+tNames+'</span>'+
-       '<span class="cls-size">'+cls.size+'</span>';
+       '<span class="cls-size">'+sizeStr+'</span>'; 
       block.appendChild(l1);block.appendChild(l2);
       cell.appendChild(block);
     });
@@ -2662,7 +2672,7 @@ function makeGrid(filterFn, highlightFn){
         '</div>'+
         '<div class="class-line">'+
           '<span class="cls-teach">'+tNames+'</span>'+
-          '<span class="cls-size">'+cls.size+'</span>'+
+          '<span class="cls-size">'+(cls.optionalSize?cls.size+' + '+cls.optionalSize:cls.size)+'</span>'+
         '</div>'+
        '</div>';
      });
@@ -2691,7 +2701,7 @@ function showSlot(day,idx,fromModal=false){
        '<span class="'+subjCls+'" data-id="'+cls.subject+'">'+subj+'</span>'+
       '<span class="detail-teacher">'+(cls.teachers||[]).map(t=>teacherSpan(t,cls.subject,tDup[t]>1)).join(', ')+'</span>'+
        '<span class="detail-room">'+(cls.cabinets||[]).map(c=>cabinetSpan(c)).join(', ')+'</span>'+
-       '<span class="detail-size">'+cls.size+'</span>'+
+       '<span class="detail-size">'+(cls.optionalSize?cls.size+' + '+cls.optionalSize:cls.size)+'</span>'+
        '<span class="detail-part">'+part+'</span>'+
      '</div>';
    const studs=cls.students.map(n=>personLink(n,'student')).join(', ');
@@ -2744,7 +2754,7 @@ function computeTeacherStats(name){
      const first=arrive?dayStart:firstClass;
      const last=teachSlots[teachSlots.length-1].slotIndex;
      time+=last-first+1;
-     teachSlots.forEach(sl=>{const c=sl.classes.find(x=>(x.teachers||[]).includes(name));sizes.push(c.size);total++;});
+     teachSlots.forEach(sl=>{const c=sl.classes.find(x=>(x.teachers||[]).includes(name));sizes.push(c.size+(c.optionalSize||0));total++;});
      for(const sl of slots){if(sl.slotIndex>=first&&sl.slotIndex<=last){if(sl.gaps.teachers.includes(name))gap++;}}
    }
   });
@@ -2794,7 +2804,7 @@ function computeTeacherInfo(name){
        const cls=sl.classes.find(c=>(c.teachers||[]).includes(name));
        hours++;
        const stat=subjects[cls.subject]||{count:0,size:0};
-       stat.count++;stat.size+=cls.size;subjects[cls.subject]=stat;
+       stat.count++;stat.size+=cls.size+(cls.optionalSize||0);subjects[cls.subject]=stat;
      });
    }
   slots.forEach(sl=>{

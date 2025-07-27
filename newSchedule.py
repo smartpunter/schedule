@@ -302,9 +302,12 @@ def _assign_optional(
                 if slot != cls.get("start"):
                     continue
                 length = cls.get("length", 1)
+                cls.setdefault("slotStudents", {})
                 for st in cls.get("students", []):
+                    cls["slotStudents"].setdefault(st, set())
                     for off in range(length):
                         taken[st][dname].add(slot + off)
+                        cls["slotStudents"][st].add(slot + off)
 
     stats = {n: {"total": 0, "attended": 0, "subjects": {}} for n in student_names}
 
@@ -328,27 +331,28 @@ def _assign_optional(
                     name = stu["name"]
                     if sid not in stu.get("optionalSubjects", []):
                         continue
-                    if any(
-                        s not in student_limits[name][dname]
-                        for s in range(slot, slot + length)
-                    ):
+                    free = [
+                        slot + off
+                        for off in range(length)
+                        if slot + off in student_limits[name][dname]
+                        and (slot + off) not in taken[name][dname]
+                    ]
+                    if not free:
                         continue
-                    if any(
-                        s in taken[name][dname] for s in range(slot, slot + length)
-                    ):
-                        continue
-                    if name in cls.get("students", []):
-                        continue
-                    cls["students"].append(name)
+                    if name not in cls.get("students", []):
+                        cls["students"].append(name)
                     cls.setdefault("optionalSize", 0)
+                    cls.setdefault("slotStudents", {})
+                    cls["slotStudents"].setdefault(name, set())
                     cls["optionalSize"] += student_size.get(name, 1)
-                    for off in range(length):
-                        taken[name][dname].add(slot + off)
-                    stats[name]["attended"] += length
+                    for sl in free:
+                        taken[name][dname].add(sl)
+                        cls["slotStudents"][name].add(sl)
+                    stats[name]["attended"] += len(free)
                     subj = stats[name]["subjects"].setdefault(
                         sid, {"total": 0, "attended": 0}
                     )
-                    subj["attended"] += length
+                    subj["attended"] += len(free)
     return stats
 
 
@@ -734,6 +738,9 @@ def build_fast_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, 
             "cabinets": cabinets_assigned,
             # copy to keep class attendance independent
             "students": list(info["students"]),
+            "slotStudents": {
+                st: set(range(start, start + length)) for st in info["students"]
+            },
             "size": info["size"],
             "optionalSize": 0,
             "start": start,
@@ -1621,6 +1628,10 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                     "cabinets": selected_cabs,
                     # copy list so modifications for optional classes don't affect others
                     "students": list(c["students"]),
+                    "slotStudents": {
+                        st: set(range(c["start"], c["start"] + c["length"]))
+                        for st in c["students"]
+                    },
                     "size": c["size"],
                     "optionalSize": 0,
                     "start": c["start"],
@@ -1664,8 +1675,9 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
             for cls in schedule[name][slot]:
                 for t in cls.get("teachers", []):
                     teacher_slots[t][name].add(slot)
-                for stu in cls["students"]:
-                    student_slots[stu][name].add(slot)
+                for stu, slots_set in cls.get("slotStudents", {}).items():
+                    if slot in slots_set:
+                        student_slots[stu][name].add(slot)
 
     teacher_state = {t: {day["name"]: {} for day in cfg["days"]} for t in teacher_names}
     defaults = cfg.get("defaults", {})
@@ -1957,7 +1969,14 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
         name = day["name"]
         slot_list = []
         for slot in day["slots"]:
-            classes = schedule[name][slot]
+            classes = []
+            for cls in schedule[name][slot]:
+                cp = cls.copy()
+                if "slotStudents" in cp:
+                    cp["slotStudents"] = {
+                        k: sorted(list(v)) for k, v in cp["slotStudents"].items()
+                    }
+                classes.append(cp)
             gaps_students = [
                 s for s in student_names if student_state[s][name][slot] == "gap"
             ]
@@ -2008,10 +2027,12 @@ def solve_fast(cfg: Dict[str, Any]) -> Dict[str, Any]:
                 end_slot = cls["start"] + cls["length"] - 1
                 for t in cls.get("teachers", []):
                     teacher_last[t][dname] = max(teacher_last[t][dname], end_slot)
-                for stu in cls.get("students", []):
-                    student_last[stu][dname] = max(student_last[stu][dname], end_slot)
-                    for s in range(cls["start"], end_slot + 1):
-                        student_slots_map[stu][dname].add(s)
+                for stu, slots_set in cls.get("slotStudents", {}).items():
+                    if slot in slots_set:
+                        student_last[stu][dname] = max(student_last[stu][dname], end_slot)
+                        for s in range(cls["start"], end_slot + 1):
+                            if s in slots_set:
+                                student_slots_map[stu][dname].add(s)
 
     total_penalty = 0
     for t in teacher_names:
@@ -2049,10 +2070,16 @@ def solve_fast(cfg: Dict[str, Any]) -> Dict[str, Any]:
         dname = day["name"]
         slot_list = []
         for slot in day["slots"]:
+            classes = []
+            for cls in schedule[dname][slot]:
+                cp = cls.copy()
+                if "slotStudents" in cp:
+                    cp["slotStudents"] = {k: sorted(list(v)) for k, v in cp["slotStudents"].items()}
+                classes.append(cp)
             slot_list.append(
                 {
                     "slotIndex": slot,
-                    "classes": schedule[dname][slot],
+                    "classes": classes,
                     # placeholders for compatibility with generate_html
                     "gaps": {"students": [], "teachers": []},
                     "home": {"students": [], "teachers": []},
@@ -2091,8 +2118,9 @@ def analyse_students(schedule: Dict[str, Any]) -> Dict[str, Any]:
         for slot in day.get("slots", []):
             for cls in slot.get("classes", []):
                 sid = cls["subject"]
-                for st in cls.get("students", []):
-                    student_hours[st][sid] += 1
+                for st, slots_set in cls.get("slotStudents", {}).items():
+                    if slot in slots_set:
+                        student_hours[st][sid] += 1
     return student_hours
 
 
@@ -2117,7 +2145,7 @@ def analyse_subjects(schedule: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str,
                     cls.get("size", len(cls.get("students", [])))
                     + cls.get("optionalSize", 0)
                 )
-                for stu in cls.get("students", []):
+                for stu in cls.get("slotStudents", {}):
                     if stu not in subjects[sid]["students"]:
                         subjects[sid]["students"].add(stu)
                         subjects[sid]["student_count"] += student_size.get(stu, 1)
@@ -2510,6 +2538,17 @@ function makeParamTable(list){
   html+='</div>';return html;
 }
 function countStudents(list){return(list||[]).reduce((a,n)=>a+(studentSize[n]||1),0);}
+function studentsAt(cls,slot){
+  if(!cls.slotStudents) return cls.students||[];
+  const res=[];const seen=new Set();
+  (cls.students||[]).forEach(n=>{if(!cls.slotStudents[n]||cls.slotStudents[n].includes(slot)){res.push(n);seen.add(n);}});
+  Object.keys(cls.slotStudents).forEach(n=>{if(!seen.has(n)&&cls.slotStudents[n].includes(slot))res.push(n);});
+  return res;
+}
+function studentPresent(cls,name,slot){
+  if(!cls.slotStudents||!cls.slotStudents[name]) return (cls.students||[]).includes(name);
+  return cls.slotStudents[name].includes(slot);
+}
 let historyStack=[];
 let historyTitles=[];
 let historyIndex=-1;
@@ -2584,7 +2623,7 @@ function buildTable(){
     const sDup={};
     slot.classes.forEach(c=>{
       (c.teachers||[]).forEach(t=>{tDup[t]=(tDup[t]||0)+1;});
-      c.students.forEach(s=>{sDup[s]=(sDup[s]||0)+1;});
+      studentsAt(c,i).forEach(s=>{sDup[s]=(sDup[s]||0)+1;});
     });
     slot.classes.forEach(cls=>{
       const block=document.createElement('div');
@@ -2594,7 +2633,7 @@ function buildTable(){
       const l1=document.createElement('div');
       l1.className='class-line';
       const rooms=(cls.cabinets||[]).map(c=>cabinetSpan(c)).join(', ');
-      const subjCls='cls-subj clickable subject'+(cls.students.some(s=>sDup[s]>1)?' dup-subject':'');
+      const subjCls='cls-subj clickable subject'+(studentsAt(cls,i).some(s=>sDup[s]>1)?' dup-subject':'');
       l1.innerHTML='<span class="'+subjCls+'" data-id="'+cls.subject+'">'+subj+'</span>'+
         '<span class="cls-room">'+rooms+'</span>'+
         '<span class="cls-part">'+part+'</span>';
@@ -2653,16 +2692,16 @@ function makeGrid(filterFn, highlightFn){
    scheduleData.days.forEach(day=>{
      const slot=day.slots.find(s=>s.slotIndex==i)||{classes:[]};
      html+='<div class="cell">';
-     const tDup={};
-     const sDup={};
-     slot.classes.forEach(c=>{(c.teachers||[]).forEach(t=>{tDup[t]=(tDup[t]||0)+1;});c.students.forEach(s=>{sDup[s]=(sDup[s]||0)+1;});});
-    slot.classes.filter(filterFn).forEach(cls=>{
+    const tDup={};
+    const sDup={};
+    slot.classes.forEach(c=>{(c.teachers||[]).forEach(t=>{tDup[t]=(tDup[t]||0)+1;});studentsAt(c,i).forEach(s=>{sDup[s]=(sDup[s]||0)+1;});});
+    slot.classes.filter(c=>filterFn(c,i)).forEach(cls=>{
        const optional = highlightFn && highlightFn(cls);
        const subj=subjectDisplay[cls.subject]||cls.subject;
        const part=(cls.length>1)?((i-cls.start+1)+'/'+cls.length):'1/1';
        const tNames=(cls.teachers||[]).map(t=>teacherSpan(t,cls.subject,tDup[t]>1)).join(', ');
         const rooms=(cls.cabinets||[]).map(c=>cabinetSpan(c)).join(', ');
-        const subjCls='cls-subj clickable subject'+(cls.students.some(s=>sDup[s]>1)?' dup-subject':'');
+        const subjCls='cls-subj clickable subject'+(studentsAt(cls,i).some(s=>sDup[s]>1)?' dup-subject':'');
         const blockCls='class-block'+(optional?' optional':'');
         html+='<div class="'+blockCls+'">'+
          '<div class="class-line">'+
@@ -2691,11 +2730,11 @@ function showSlot(day,idx,fromModal=false){
  html+='<div class="slot-detail">';
  const tDup={};
  const sDup={};
- slot.classes.forEach(c=>{(c.teachers||[]).forEach(t=>{tDup[t]=(tDup[t]||0)+1;});c.students.forEach(s=>{sDup[s]=(sDup[s]||0)+1;});});
+slot.classes.forEach(c=>{(c.teachers||[]).forEach(t=>{tDup[t]=(tDup[t]||0)+1;});studentsAt(c,idx).forEach(s=>{sDup[s]=(sDup[s]||0)+1;});});
  slot.classes.forEach((cls)=>{
    const subj=subjectDisplay[cls.subject]||cls.subject;
    const part=(cls.length>1)?((idx-cls.start+1)+'/'+cls.length):'1/1';
-   const subjCls='detail-subj clickable subject'+(cls.students.some(s=>sDup[s]>1)?' dup-subject':'');
+  const subjCls='detail-subj clickable subject'+(studentsAt(cls,idx).some(s=>sDup[s]>1)?' dup-subject':'');
    html+='<div class="slot-class">'+
      '<div class="detail-line">'+
        '<span class="'+subjCls+'" data-id="'+cls.subject+'">'+subj+'</span>'+
@@ -2704,7 +2743,7 @@ function showSlot(day,idx,fromModal=false){
        '<span class="detail-size">'+(cls.optionalSize?cls.size+' + '+cls.optionalSize:cls.size)+'</span>'+
        '<span class="detail-part">'+part+'</span>'+
      '</div>';
-   const studs=cls.students.map(n=>personLink(n,'student')).join(', ');
+  const studs=studentsAt(cls,idx).map(n=>personLink(n,'student')).join(', ');
    if(studs)html+='<div class="detail-students">'+studs+'</div>';
    html+='</div>';
  });
@@ -2770,7 +2809,7 @@ function computeStudentStats(name){
  scheduleData.days.forEach(day=>{
    const slots=day.slots;
    const dayStart=slots.length?slots[0].slotIndex:0;
-   const stSlots=slots.filter(sl=>sl.classes.some(c=>c.students.includes(name)));
+   const stSlots=slots.filter(sl=>sl.classes.some(c=>studentPresent(c,name,sl.slotIndex)));
    if(stSlots.length){
      const firstClass=stSlots[0].slotIndex;
      const first=arrive?dayStart:firstClass;
@@ -2849,27 +2888,27 @@ function computeStudentInfo(name){
  scheduleData.days.forEach(day=>{
    const slots=day.slots;
    const dayStart=slots.length?slots[0].slotIndex:0;
-   const stSlots=slots.filter(sl=>sl.classes.some(c=>c.students.includes(name)));
+   const stSlots=slots.filter(sl=>sl.classes.some(c=>studentPresent(c,name,sl.slotIndex)));
    if(stSlots.length){
      const first=arrive?dayStart:stSlots[0].slotIndex;
      const last=stSlots[stSlots.length-1].slotIndex;
      time+=last-first+1;
      for(const sl of slots){if(sl.slotIndex>=first&&sl.slotIndex<=last){if(sl.gaps.students.includes(name))gap++;}}
      stSlots.forEach(sl=>{
-       const cls=sl.classes.find(c=>c.students.includes(name));
+       const cls=sl.classes.find(c=>studentPresent(c,name,sl.slotIndex));
        hours++;
        const stat=subjects[cls.subject]||{count:0,penalty:0};
        stat.count++;subjects[cls.subject]=stat;
      });
    }
    slots.forEach(sl=>{
-    const cnt=sl.classes.filter(c=>c.students.includes(name)).length;
+    const cnt=sl.classes.filter(c=>studentPresent(c,name,sl.slotIndex)).length;
     if(cnt>1)dup+=cnt-1;
     (sl.penaltyDetails||[]).forEach(p=>{
     if(p.name===name){
       pen+=p.amount;
       if(p.type==='unoptimalSlot'){
-        const cls=sl.classes.find(c=>c.students.includes(name));
+        const cls=sl.classes.find(c=>studentPresent(c,name,sl.slotIndex));
         if(cls){
           subjects[cls.subject]=subjects[cls.subject]||{count:0,penalty:0};
           subjects[cls.subject].penalty+=(p.amount/imp);
@@ -3030,7 +3069,7 @@ function showTeacher(idx,fromModal=false){
  const full=computeTeacherInfo(name);
  const defArr=(configData.defaults.teacherArriveEarly||[false])[0];
  const boldArr=full.arrive!==defArr;
- let html='<h2>Teacher: '+display+'</h2>'+makeGrid(cls=>cls.teachers.includes(name));
+ let html='<h2>Teacher: '+display+'</h2>'+makeGrid((cls,_slot)=>cls.teachers.includes(name));
  html+='<h3>Subjects</h3><table class="info-table"><tr><th>Subject</th><th>Classes</th><th>Avg size</th></tr>';
  Object.keys(full.subjects).forEach(sid=>{
    const s=full.subjects[sid];
@@ -3067,7 +3106,7 @@ function showStudent(idx,fromModal=false){
  const defArr=(configData.defaults.studentArriveEarly||[true])[0];
  const boldArr=full.arrive!==defArr;
  const optionalSubjects=info.optionalSubjects||[];
- let html='<h2>Student: '+name+'</h2>'+makeGrid(cls=>cls.students.includes(name),cls=>optionalSubjects.includes(cls.subject));
+ let html='<h2>Student: '+name+'</h2>'+makeGrid((cls,slot)=>studentPresent(cls,name,slot),cls=>optionalSubjects.includes(cls.subject));
  html+='<h3>Subjects</h3><table class="info-table"><tr><th>Subject</th><th>Classes</th><th>Penalty</th></tr>';
 Object.keys(full.subjects).forEach(sid=>{const s=full.subjects[sid];const sn=subjectDisplay[sid]||sid;html+='<tr><td><span class="clickable subject" data-id="'+sid+'">'+sn+'</span></td><td class="num">'+s.count+'</td><td class="num">'+(s.penalty||0).toFixed(1)+'</td></tr>';});
  html+='</table>';
@@ -3098,7 +3137,7 @@ Object.keys(full.subjects).forEach(sid=>{const s=full.subjects[sid];const sn=sub
 function showCabinet(name,fromModal=false){
  const info=configData.cabinets[name]||{};
   const disp=cabinetDisplay[name]||name;
-  let html='<h2>Room: '+disp+'</h2>'+makeGrid(cls=>(cls.cabinets||[]).includes(name));
+  let html='<h2>Room: '+disp+'</h2>'+makeGrid((cls,_slot)=>(cls.cabinets||[]).includes(name));
  const params=[
   ['Capacity',info.capacity||'-'],
   ['Allowed subjects',(info.allowedSubjects||[]).map(s=>subjectDisplay[s]||s).join(', ')||'-']
@@ -3111,7 +3150,7 @@ function showSubject(id,fromModal=false){
  const subj=configData.subjects[id]||{};
  const defOpt=(configData.defaults.optimalSlot||[0])[0];
  const disp=subjectDisplay[id]||id;
- let html='<h2>Subject: '+disp+'</h2>'+makeGrid(cls=>cls.subject===id);
+ let html='<h2>Subject: '+disp+'</h2>'+makeGrid((cls)=>cls.subject===id);
 html+='<h3>Teachers</h3><table class="info-table"><tr><th>Name</th></tr>';
 (configData.teachers||[]).forEach((t,i)=>{if((t.subjects||[]).includes(id)){const bold=(subj.primaryTeachers||[]).includes(t.name);const nm=bold?'<strong>'+(teacherDisplay[t.name]||t.name)+'</strong>':(teacherDisplay[t.name]||t.name);html+='<tr><td><span class="clickable teacher" data-id="'+i+'">'+nm+'</span></td></tr>';}});
  html+='</table><h3>Students</h3><table class="info-table"><tr><th>Name</th><th>Group</th></tr>';

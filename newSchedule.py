@@ -283,42 +283,25 @@ def _calc_student_limits(cfg: Dict[str, Any]) -> Dict[str, Dict[str, Set[int]]]:
     return limits
 
 
-def _assign_optional(
+
+def _collect_optional_stats(
     schedule: Dict[str, Dict[int, List[Dict[str, Any]]]],
     cfg: Dict[str, Any],
 ) -> Dict[str, Dict[str, Any]]:
-    """Assign optional classes and collect attendance statistics."""
+    """Return attendance statistics for optional subjects without modifying the schedule."""
     students = cfg.get("students", [])
     student_names = [s["name"] for s in students]
-    student_size = {s["name"]: int(s.get("group", 1)) for s in students}
-    days = cfg.get("days", [])
-    student_limits = _calc_student_limits(cfg)
 
-    taken = {n: {d["name"]: set() for d in days} for n in student_names}
-    for day in days:
+    stats = {n: {"total": 0, "attended": 0, "subjects": {}} for n in student_names}
+
+    for day in cfg.get("days", []):
         dname = day["name"]
         for slot in day["slots"]:
             for cls in schedule[dname][slot]:
                 if slot != cls.get("start"):
                     continue
-                length = cls.get("length", 1)
-                cls.setdefault("slotStudents", {})
-                for st in cls.get("students", []):
-                    cls["slotStudents"].setdefault(st, set())
-                    for off in range(length):
-                        taken[st][dname].add(slot + off)
-                        cls["slotStudents"][st].add(slot + off)
-
-    stats = {n: {"total": 0, "attended": 0, "subjects": {}} for n in student_names}
-
-    for day in days:
-        dname = day["name"]
-        for slot in day["slots"]:
-            for cls in schedule[dname][slot]:
                 sid = cls["subject"]
-                if slot != cls["start"]:
-                    continue
-                length = cls["length"]
+                length = cls.get("length", 1)
                 for stu in students:
                     name = stu["name"]
                     if sid in stu.get("optionalSubjects", []):
@@ -327,32 +310,10 @@ def _assign_optional(
                         )
                         subj["total"] += length
                         stats[name]["total"] += length
-                for stu in students:
-                    name = stu["name"]
-                    if sid not in stu.get("optionalSubjects", []):
-                        continue
-                    free = [
-                        slot + off
-                        for off in range(length)
-                        if slot + off in student_limits[name][dname]
-                        and (slot + off) not in taken[name][dname]
-                    ]
-                    if not free:
-                        continue
-                    if name not in cls.get("students", []):
-                        cls["students"].append(name)
-                    cls.setdefault("optionalSize", 0)
-                    cls.setdefault("slotStudents", {})
-                    cls["slotStudents"].setdefault(name, set())
-                    cls["optionalSize"] += student_size.get(name, 1)
-                    for sl in free:
-                        taken[name][dname].add(sl)
-                        cls["slotStudents"][name].add(sl)
-                    stats[name]["attended"] += len(free)
-                    subj = stats[name]["subjects"].setdefault(
-                        sid, {"total": 0, "attended": 0}
-                    )
-                    subj["attended"] += len(free)
+                        attended = len(cls.get("slotStudents", {}).get(name, set()))
+                        subj["attended"] += attended
+                        stats[name]["attended"] += attended
+
     return stats
 
 
@@ -418,6 +379,7 @@ def build_fast_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, 
 
     student_limits: Dict[str, Dict[str, Set[int]]] = {}
     students_by_subject: Dict[str, List[str]] = {}
+    optional_by_subject: Dict[str, List[str]] = {}
     student_size: Dict[str, int] = {}
     for stu in students:
         name = stu["name"]
@@ -446,6 +408,8 @@ def build_fast_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, 
         student_size[name] = int(stu.get("group", 1))
         for sid in stu.get("subjects", []):
             students_by_subject.setdefault(sid, []).append(name)
+        for sid in stu.get("optionalSubjects", []):
+            optional_by_subject.setdefault(sid, []).append(name)
 
     # mapping from subject class to fixed lesson info
     day_lookup = {d["name"]: idx for idx, d in enumerate(days)}
@@ -997,6 +961,8 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
         student_size[name] = int(stu.get("group", 1))
         for sid in stu["subjects"]:
             students_by_subject.setdefault(sid, []).append(name)
+        for sid in stu.get("optionalSubjects", []):
+            optional_by_subject.setdefault(sid, []).append(name)
 
     fixed_classes = _prepare_fixed_classes(
         cfg,
@@ -1045,6 +1011,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
             raise ValueError(f"No teacher available for subject {sid}")
         # copy so later optional assignments do not mutate the shared list
         enrolled = list(students_by_subject.get(sid, []))
+        optional_students = list(optional_by_subject.get(sid, []))
         class_size = sum(student_size[s] for s in enrolled)
         allowed_cabinets = [
             c
@@ -1096,6 +1063,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                         "size": class_size,
                         # store a copy to avoid mutating the source list later
                         "students": list(enrolled),
+                        "optional_students": list(optional_students),
                         "student_pen": stud_pen_map,
                         "teacher_pen": teach_pen_map,
                         "penalty": sum(stud_pen_map.values())
@@ -1155,6 +1123,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                                 "size": class_size,
                                 # copy to decouple from shared enrollment list
                                 "students": list(enrolled),
+                                "optional_students": list(optional_students),
                                 "student_pen": stud_pen_map,
                                 "teacher_pen": teach_pen_map,
                                 "penalty": sum(stud_pen_map.values())
@@ -1252,6 +1221,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
     teacher_intervals = {t: defaultdict(list) for t in teacher_names}
     cabinet_intervals = {c: defaultdict(list) for c in cabinets}
     student_intervals = {s: defaultdict(list) for s in student_size}
+    optional_exprs_map = {s: [] for s in student_size}
 
     for (sid, idx), cand_list in candidates.items():
         for cand in cand_list:
@@ -1262,6 +1232,25 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                 student_intervals[stu][cand["day"]].append(
                     (base_int, start, end, cand["var"])
                 )
+            for stu in cand.get("optional_students", []):
+                for off in range(cand["length"]):
+                    slot = start + off
+                    attend = model.NewBoolVar(
+                        f"opt_{sid}_{idx}_{stu}_{cand['day']}_{slot}"
+                    )
+                    model.Add(attend <= cand["var"])
+                    if slot not in student_limits[stu][cand["day"]]:
+                        model.Add(attend == 0)
+                    interval = model.NewOptionalIntervalVar(
+                        slot,
+                        1,
+                        slot + 1,
+                        attend,
+                        f"oint_{sid}_{idx}_{stu}_{cand['day']}_{slot}",
+                    )
+                    student_intervals[stu][cand["day"]].append((interval, slot, slot + 1, attend))
+                    optional_exprs_map[stu].append(cand["var"] - attend)
+                    cand.setdefault("optional_pres", {}).setdefault(stu, {})[slot] = attend
             for t, pres in cand.get("teacher_pres", {}).items():
                 interval = model.NewOptionalIntervalVar(
                     start,
@@ -1542,6 +1531,15 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
         for s in student_importance
     }
 
+    opt_pen_val = penalties.get("optionalSubjectMissing", [0])[0]
+    student_optional_exprs = {
+        s: opt_pen_val
+        * student_importance.get(s, default_student_imp)
+        * student_size[s]
+        * sum(optional_exprs_map.get(s, []))
+        for s in student_size
+    }
+
     teacher_unopt_exprs = {}
     for t in teacher_importance:
         expr = []
@@ -1581,6 +1579,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
             + sum(teacher_dup_exprs.values())
             + sum(student_gap_exprs.values())
             + sum(student_unopt_exprs.values())
+            + sum(student_optional_exprs.values())
             + sum(student_streak_exprs.values())
             + sum(student_dup_exprs.values())
         )
@@ -1637,6 +1636,16 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
                     "start": c["start"],
                     "length": c["length"],
                 }
+                for stu, slot_map in c.get("optional_pres", {}).items():
+                    added = False
+                    for sl, pres in slot_map.items():
+                        if solver.Value(pres):
+                            if not added:
+                                cls_obj["students"].append(stu)
+                                cls_obj.setdefault("slotStudents", {}).setdefault(stu, set())
+                                cls_obj["optionalSize"] += student_size.get(stu, 1)
+                                added = True
+                            cls_obj["slotStudents"][stu].add(sl)
                 for s in range(c["start"], c["start"] + c["length"]):
                     schedule[c["day"]][s].append(cls_obj)
 
@@ -1646,7 +1655,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
 def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
     """Generate schedule and wrap it in export format."""
     schedule = build_model(cfg)
-    optional_info = _assign_optional(schedule, cfg)
+    optional_info = _collect_optional_stats(schedule, cfg)
     _deduplicate_schedule(schedule)
 
     teacher_names = [t["name"] for t in cfg.get("teachers", [])]
@@ -2009,7 +2018,7 @@ def solve(cfg: Dict[str, Any]) -> Dict[str, Any]:
 def solve_fast(cfg: Dict[str, Any]) -> Dict[str, Any]:
     """Solve using the simplified model and compute total penalty."""
     schedule = build_fast_model(cfg)
-    optional_info = _assign_optional(schedule, cfg)
+    optional_info = _collect_optional_stats(schedule, cfg)
     _deduplicate_schedule(schedule)
 
     teacher_names = [t["name"] for t in cfg.get("teachers", [])]

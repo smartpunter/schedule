@@ -931,6 +931,7 @@ def build_model(cfg: Dict[str, Any]) -> Dict[str, Dict[int, List[Dict[str, Any]]
     # calculate allowed slots for every student
     student_limits: Dict[str, Dict[str, Set[int]]] = {}
     students_by_subject: Dict[str, List[str]] = {}
+    optional_by_subject: Dict[str, List[str]] = {}
     student_size: Dict[str, int] = {}
     student_arrive = {s["name"]: bool(s.get("arriveEarly", True)) for s in students}
     for stu in students:
